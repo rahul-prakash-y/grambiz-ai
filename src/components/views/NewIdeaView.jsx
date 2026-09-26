@@ -1112,11 +1112,20 @@ export default function NewIdeaView({ t, lang, onNavigate }) {
             <div className="flex flex-wrap items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => onNavigate('calculator')}
+                onClick={() => onNavigate('advisory')}
                 className="btn btn-sm btn-primary gap-1.5 font-bold rounded-xl shadow-sm text-white"
               >
-                <span>{lang === 'ta' ? 'நிதி கால்குலேட்டர்' : 'Open in Calculator'}</span>
+                <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                <span>{lang === 'ta' ? 'AI ஆலோசனை அறிக்கை' : 'AI Advisory Report'}</span>
                 <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => onNavigate('calculator')}
+                className="btn btn-sm bg-white hover:bg-slate-50 text-slate-700 border-slate-200 font-bold rounded-xl gap-1"
+              >
+                <span>{lang === 'ta' ? 'நிதி கால்குலேட்டர்' : 'Loan Calculator'}</span>
               </button>
 
               <button

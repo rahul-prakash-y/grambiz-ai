@@ -39,6 +39,13 @@ export default function Sidebar({
       badgeColor: 'badge-primary'
     },
     {
+      id: 'advisory',
+      label: t.nav.advisory || (lang === 'ta' ? 'AI ஆலோசனை' : 'AI Advisory'),
+      icon: Sparkles,
+      badge: 'SWOT',
+      badgeColor: 'badge-warning'
+    },
+    {
       id: 'competitors',
       label: t.nav.localCompetitors,
       icon: Store,

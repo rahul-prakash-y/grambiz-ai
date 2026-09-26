@@ -6,6 +6,7 @@ import NewIdeaView from './components/views/NewIdeaView';
 import CompetitorsView from './components/views/CompetitorsView';
 import CalculatorView from './components/views/CalculatorView';
 import ReportsView from './components/views/ReportsView';
+import AdvisoryView from './components/views/AdvisoryView';
 import { translations } from './data/translations';
 import { Sprout, PhoneCall, ShieldCheck, Heart } from 'lucide-react';
 
@@ -21,6 +22,7 @@ export default function App() {
     switch (activeTab) {
       case 'dashboard': return t.nav.dashboard;
       case 'new-idea': return t.nav.newIdea;
+      case 'advisory': return t.nav.advisory;
       case 'competitors': return t.nav.localCompetitors;
       case 'calculator': return t.nav.financialCalculator;
       case 'reports': return t.nav.myReports;
@@ -66,6 +68,9 @@ export default function App() {
           )}
           {activeTab === 'new-idea' && (
             <NewIdeaView t={t} lang={lang} onNavigate={setActiveTab} />
+          )}
+          {activeTab === 'advisory' && (
+            <AdvisoryView t={t} lang={lang} onNavigate={setActiveTab} />
           )}
           {activeTab === 'competitors' && (
             <CompetitorsView t={t} lang={lang} onNavigate={setActiveTab} />

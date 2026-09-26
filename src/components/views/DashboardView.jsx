@@ -101,11 +101,18 @@ export default function DashboardView({ t, lang, onNavigate }) {
 
           <div className="flex items-center gap-2 w-full sm:w-auto">
             <button
-              onClick={() => onNavigate('new-idea')}
-              className="btn btn-sm btn-primary flex-1 sm:flex-none font-bold rounded-xl text-white shadow-xs"
+              onClick={() => onNavigate('advisory')}
+              className="btn btn-sm btn-primary flex-1 sm:flex-none font-bold rounded-xl text-white shadow-xs gap-1.5"
             >
-              <span>{lang === 'ta' ? 'யோசனையை மதிப்பாய்வு செய்' : 'View Full Dossier'}</span>
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>{lang === 'ta' ? 'AI ஆலோசனை அறிக்கை' : 'AI Advisory Report'}</span>
               <ChevronRight className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => onNavigate('new-idea')}
+              className="btn btn-sm btn-outline border-slate-200 text-slate-700 font-bold rounded-xl"
+            >
+              <span>{lang === 'ta' ? 'மாற்று' : 'Edit'}</span>
             </button>
           </div>
         </div>
