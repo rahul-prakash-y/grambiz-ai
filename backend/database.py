@@ -16,8 +16,21 @@ load_dotenv()
 # Get the URL from .env (SQLAlchemy requires 'postgresql://' not 'postgres://')
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./grambiz.db")
 
-if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
-    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+# Normalize PostgreSQL URL for SQLAlchemy:
+# Render and legacy platforms inject 'postgres://', but modern SQLAlchemy (v2.0/v2.1+)
+# connects via 'postgresql+psycopg://' (Psycopg 3) or 'postgresql+psycopg2://' (Psycopg 2).
+if SQLALCHEMY_DATABASE_URL:
+    if SQLALCHEMY_DATABASE_URL.startswith("postgres://") or (
+        SQLALCHEMY_DATABASE_URL.startswith("postgresql://") and not SQLALCHEMY_DATABASE_URL.startswith("postgresql+")
+    ):
+        try:
+            import psycopg  # noqa: F401
+            driver_scheme = "postgresql+psycopg://"
+        except ImportError:
+            driver_scheme = "postgresql+psycopg2://"
+
+        prefix = "postgres://" if SQLALCHEMY_DATABASE_URL.startswith("postgres://") else "postgresql://"
+        SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace(prefix, driver_scheme, 1)
 
 # Render Internal URL resolution for local development:
 # If a Render internal hostname (e.g. '@dpg-xxxx-a/') is used from outside Render,
