@@ -7,6 +7,7 @@ import CompetitorsView from './components/views/CompetitorsView';
 import CalculatorView from './components/views/CalculatorView';
 import ReportsView from './components/views/ReportsView';
 import AdvisoryView from './components/views/AdvisoryView';
+import VoiceAssistant from './components/voice/VoiceAssistant';
 import { translations } from './data/translations';
 import { Sprout, PhoneCall, ShieldCheck, Heart } from 'lucide-react';
 
@@ -109,6 +110,9 @@ export default function App() {
           </div>
         </footer>
       </div>
+
+      {/* Persistent Global Voice Assistant (FAB + Animated Listening Visualizer Modal) */}
+      <VoiceAssistant lang={lang} t={t} />
     </div>
   );
 }

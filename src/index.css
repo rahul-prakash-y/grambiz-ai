@@ -59,3 +59,62 @@
   transform: translateY(-2px);
   box-shadow: 0 12px 24px -6px rgba(13, 122, 95, 0.12), 0 4px 8px -2px rgba(2, 132, 199, 0.08);
 }
+
+/* Voice Assistant Audio Visualizer Animations */
+@keyframes audioWaveBar {
+  0% {
+    height: 18%;
+    opacity: 0.45;
+  }
+  50% {
+    height: 95%;
+    opacity: 1;
+  }
+  100% {
+    height: 25%;
+    opacity: 0.55;
+  }
+}
+
+.visualizer-bar-animated {
+  animation: audioWaveBar 0.85s ease-in-out infinite alternate;
+  transform-origin: bottom;
+}
+
+@keyframes micRadarPulse {
+  0% {
+    transform: scale(0.95);
+    opacity: 0.85;
+  }
+  70% {
+    transform: scale(1.9);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+.mic-radar-wave-1 {
+  animation: micRadarPulse 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+}
+
+.mic-radar-wave-2 {
+  animation: micRadarPulse 2.2s cubic-bezier(0, 0.2, 0.8, 1) infinite;
+  animation-delay: 0.75s;
+}
+
+@keyframes voiceGlow {
+  0%, 100% {
+    box-shadow: 0 0 20px 2px rgba(13, 122, 95, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 35px 8px rgba(16, 185, 129, 0.6);
+  }
+}
+
+.voice-glow-active {
+  animation: voiceGlow 2s ease-in-out infinite;
+}
+
