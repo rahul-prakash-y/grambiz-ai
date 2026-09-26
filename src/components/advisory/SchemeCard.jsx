@@ -50,7 +50,7 @@ export default function SchemeCard({
                 <span className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight">
                   {shortCode}
                 </span>
-                <span className="badge badge-sm badge-success text-white font-bold">
+                <span className="badge badge-sm badge-success text-white font-bold whitespace-nowrap">
                   {subsidyPct}
                 </span>
               </div>

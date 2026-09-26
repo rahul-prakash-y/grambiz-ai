@@ -99,7 +99,7 @@ export default function FundingGapSection({
           </div>
           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-sky-50 text-sky-800 text-xs font-bold border border-sky-200">
             <Building2 className="w-3 h-3 text-sky-600" />
-            <span>{lang === 'ta' ? 'கடன் தேவை' : 'Gap Analysis'}</span>
+            <span className='whitespace-nowrap'>{lang === 'ta' ? 'கடன் தேவை' : 'Gap Analysis'}</span>
           </span>
         </div>
 
@@ -115,7 +115,7 @@ export default function FundingGapSection({
                   <span className="text-xs font-extrabold text-emerald-950">
                     {t.calculator.availableCapitalLabel}
                   </span>
-                  <span className="badge badge-xs bg-emerald-600 text-white font-bold border-none">
+                  <span className="badge badge-sm bg-emerald-600 text-white font-bold border-none">
                     {t.calculator.fromGlobalState}
                   </span>
                 </div>
