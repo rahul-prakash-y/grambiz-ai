@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import re
 from typing import List, Optional
+from deep_translator import GoogleTranslator
 import requests
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -13,7 +14,9 @@ from schemas import (
     CompetitorResponse,
     AdvisoryResponse,
     GovernmentScheme,
-    FinancialCalcResponse
+    FinancialCalcResponse,
+    SchemeRecommendationRequest,
+    SchemeRecommendationResponse
 )
 
 # Load environment variables using python-dotenv
@@ -54,6 +57,82 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Load schemes_db.json for rule-based recommendation engine ───
+_SCHEMES_DB_PATH = Path(__file__).resolve().parent / "schemes_db.json"
+try:
+    with open(_SCHEMES_DB_PATH, "r", encoding="utf-8") as _f:
+        SCHEMES_DB: List[dict] = json.load(_f)
+except FileNotFoundError:
+    SCHEMES_DB = []
+except json.JSONDecodeError:
+    SCHEMES_DB = []
+
+
+# ─── Category alias map for fuzzy matching user input to scheme eligibility ───
+_CATEGORY_ALIASES: dict[str, list[str]] = {
+    "agriculture": ["agriculture", "agri", "farm", "farming", "crop", "cattle", "poultry", "goat", "fishery"],
+    "dairy": ["dairy", "milk", "milch", "cattle"],
+    "manufacturing": ["manufacturing", "manu", "craft", "handloom", "fabric", "mill", "workshop"],
+    "retail": ["retail", "store", "shop", "grocery", "mart", "kiosk", "trade", "vendor", "hawker"],
+    "services": ["services", "service", "repair", "solar", "logist", "auto", "tech", "digital"],
+    "food processing": ["food processing", "food", "bakery", "spice", "pickle", "grain", "milling", "snack"],
+    "textiles": ["textiles", "textile", "handloom", "fabric", "weaving", "garment", "apparel"],
+    "handicrafts": ["handicrafts", "handicraft", "artisan", "pottery", "woodwork", "bamboo"],
+    "transport": ["transport", "logistics", "fleet", "auto", "vehicle"],
+}
+
+
+def _resolve_category(user_input: str) -> list[str]:
+    """
+    Resolves a free-text business category into one or more canonical category names
+    that can be matched against scheme eligible_categories lists.
+    Uses keyword-based fuzzy matching against the alias map.
+    """
+    normalised = user_input.strip().lower()
+    matched: list[str] = []
+
+    for canonical, aliases in _CATEGORY_ALIASES.items():
+        if any(alias in normalised for alias in aliases):
+            matched.append(canonical)
+
+    # If nothing matched via aliases, try direct substring match against canonical names
+    if not matched:
+        for canonical in _CATEGORY_ALIASES:
+            if canonical in normalised or normalised in canonical:
+                matched.append(canonical)
+
+    return matched if matched else [normalised]
+
+
+def filter_schemes(investment_amount: float, business_category: str) -> list[dict]:
+    """
+    Rule-based recommendation engine.
+    Filters schemes_db.json entries where:
+      1. investment_amount falls within [min_investment, max_investment]
+      2. The user's business_category (after alias resolution) matches at least one
+         entry in the scheme's eligible_categories list (case-insensitive).
+    """
+    resolved_categories = _resolve_category(business_category)
+
+    results: list[dict] = []
+    for scheme in SCHEMES_DB:
+        min_inv = scheme.get("min_investment", 0)
+        max_inv = scheme.get("max_investment", float("inf"))
+
+        # Rule 1: Investment range check
+        if not (min_inv <= investment_amount <= max_inv):
+            continue
+
+        # Rule 2: Category eligibility check (case-insensitive)
+        eligible = [cat.lower() for cat in scheme.get("eligible_categories", [])]
+        if not any(rc in eligible for rc in resolved_categories):
+            continue
+
+        results.append(scheme)
+
+    return results
 
 
 # Static dictionary mapping business categories to mock government schemes
@@ -444,10 +523,59 @@ def parse_advisory_json(raw_text: str) -> dict:
     }
 
 
+def translate_text(text: str, target: str = "ta") -> str:
+    """
+    Translates a single text string to the target language using Google Translate
+    via the deep-translator library. Falls back to original text on error.
+    """
+    if not text or not text.strip():
+        return text
+    try:
+        return GoogleTranslator(source="en", target=target).translate(text)
+    except Exception:
+        return text
+
+
+def translate_advisory_payload(advisory_data: dict, target_language: str = "ta") -> dict:
+    """
+    Translates all string fields within the structured advisory JSON payload
+    (market_insights, swot_analysis, risks) to the target language.
+    Preserves the JSON structure — only translates string values.
+    """
+    if target_language == "en":
+        return advisory_data
+
+    translated = {}
+
+    # Translate market_insights list
+    insights = advisory_data.get("market_insights", [])
+    translated["market_insights"] = [
+        translate_text(item, target_language) for item in insights
+    ]
+
+    # Translate SWOT analysis
+    swot = advisory_data.get("swot_analysis", {})
+    translated["swot_analysis"] = {
+        "strengths": [translate_text(s, target_language) for s in swot.get("strengths", [])],
+        "weaknesses": [translate_text(s, target_language) for s in swot.get("weaknesses", [])],
+        "opportunities": [translate_text(s, target_language) for s in swot.get("opportunities", [])],
+        "threats": [translate_text(s, target_language) for s in swot.get("threats", [])],
+    }
+
+    # Translate risks list
+    risks = advisory_data.get("risks", [])
+    translated["risks"] = [
+        translate_text(item, target_language) for item in risks
+    ]
+
+    return translated
+
+
 def generate_business_advisory(
     business_category: str,
     location: str,
     available_investment: float,
+    target_language: str = "en",
     api_key: Optional[str] = None
 ) -> dict:
     """
@@ -517,7 +645,13 @@ Return ONLY raw JSON. Do NOT wrap in markdown code blocks or add any additional 
         )
 
     # Parse JSON output and handle exceptions
-    return parse_advisory_json(response.text)
+    advisory_result = parse_advisory_json(response.text)
+
+    # Translate the advisory payload if target language is not English
+    if target_language and target_language.lower() != "en":
+        advisory_result = translate_advisory_payload(advisory_result, target_language.lower())
+
+    return advisory_result
 
 
 generate_advisory = generate_business_advisory
@@ -573,11 +707,13 @@ def generate_advisory_endpoint(payload: BusinessAnalysisRequest):
     """
     POST endpoint accepting BusinessAnalysisRequest. Generates strategic rural market insights,
     SWOT analysis, and risk factors using Google GenAI SDK (Gemini API).
+    If target_language is 'ta', translates the entire advisory response to Tamil.
     """
     return generate_business_advisory(
         business_category=payload.business_category,
         location=payload.location,
-        available_investment=payload.available_investment
+        available_investment=payload.available_investment,
+        target_language=payload.target_language or "en"
     )
 
 
@@ -593,16 +729,40 @@ def get_competitors_endpoint(payload: BusinessAnalysisRequest):
     )
 
 
+@app.post("/api/schemes", response_model=List[SchemeRecommendationResponse])
+def recommend_schemes_endpoint(payload: SchemeRecommendationRequest):
+    """
+    Rule-based recommendation engine.
+    Accepts investment_amount and business_category, filters schemes_db.json
+    to return only schemes where the investment falls within [min, max] range
+    and the category matches the eligibility list.
+    Returns a filtered JSON array of matching schemes.
+    """
+    matched = filter_schemes(
+        investment_amount=payload.investment_amount,
+        business_category=payload.business_category
+    )
+    return matched
+
+
 @app.post("/api/business-analysis")
 def analyze_business(payload: BusinessAnalysisRequest):
     """
     Endpoint for rural business viability analysis based on location, category, and capital.
+    If target_language is 'ta', translates the advisory portion of the response to Tamil.
     """
-    return {
+    response_data = {
         "status": "success",
         "message": f"Analysis initiated for {payload.business_category} in {payload.location}",
-        "data": payload.model_dump()
+        "data": payload.model_dump(),
+        "target_language": payload.target_language or "en"
     }
+
+    # If Tamil is requested, translate the status message
+    if payload.target_language and payload.target_language.lower() == "ta":
+        response_data["message"] = translate_text(response_data["message"], "ta")
+
+    return response_data
 
 
 if __name__ == "__main__":

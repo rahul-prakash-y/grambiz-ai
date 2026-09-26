@@ -30,7 +30,8 @@ export default function AdvisoryView({ t, lang = 'en', onNavigate }) {
     updateIdeaData, 
     analysisResult,
     advisory,
-    financials
+    financials,
+    recommendedSchemes
   } = useBusinessIdea();
 
   // Active Category state (synced with global ideaData or switchable)
@@ -54,7 +55,9 @@ export default function AdvisoryView({ t, lang = 'en', onNavigate }) {
 
   const backendRisks = advisory?.risks || analysisResult?.advisory?.risks;
 
-  const backendSchemes = financials?.schemes || analysisResult?.financials?.schemes;
+  const backendSchemes = (recommendedSchemes && recommendedSchemes.length > 0)
+    ? recommendedSchemes
+    : (financials?.schemes || analysisResult?.financials?.schemes);
   const schemesList = (backendSchemes && backendSchemes.length > 0)
     ? backendSchemes
     : ADVISORY_DATA.schemes;

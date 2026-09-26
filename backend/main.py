@@ -15,7 +15,9 @@ try:
         CompetitorResponse,
         AdvisoryResponse,
         GovernmentScheme,
-        FinancialCalcResponse
+        FinancialCalcResponse,
+        SchemeRecommendationRequest,
+        SchemeRecommendationResponse
     )
 except (ImportError, ValueError):
     from schemas import (
@@ -24,7 +26,9 @@ except (ImportError, ValueError):
         CompetitorResponse,
         AdvisoryResponse,
         GovernmentScheme,
-        FinancialCalcResponse
+        FinancialCalcResponse,
+        SchemeRecommendationRequest,
+        SchemeRecommendationResponse
     )
 
 # Load environment variables using python-dotenv
@@ -65,6 +69,80 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─── Load schemes_db.json for rule-based recommendation engine ───
+# Check both current directory and parent directory for schemes_db.json
+_SCHEMES_DB_PATH = Path(__file__).resolve().parent / "schemes_db.json"
+if not _SCHEMES_DB_PATH.exists():
+    _SCHEMES_DB_PATH = Path(__file__).resolve().parent.parent / "schemes_db.json"
+try:
+    with open(_SCHEMES_DB_PATH, "r", encoding="utf-8") as _f:
+        SCHEMES_DB: List[dict] = json.load(_f)
+except FileNotFoundError:
+    SCHEMES_DB = []
+except json.JSONDecodeError:
+    SCHEMES_DB = []
+
+
+# ─── Category alias map for fuzzy matching user input to scheme eligibility ───
+_CATEGORY_ALIASES: dict[str, list[str]] = {
+    "agriculture": ["agriculture", "agri", "farm", "farming", "crop", "cattle", "poultry", "goat", "fishery"],
+    "dairy": ["dairy", "milk", "milch", "cattle"],
+    "manufacturing": ["manufacturing", "manu", "craft", "handloom", "fabric", "mill", "workshop"],
+    "retail": ["retail", "store", "shop", "grocery", "mart", "kiosk", "trade", "vendor", "hawker"],
+    "services": ["services", "service", "repair", "solar", "logist", "auto", "tech", "digital"],
+    "food processing": ["food processing", "food", "bakery", "spice", "pickle", "grain", "milling", "snack"],
+    "textiles": ["textiles", "textile", "handloom", "fabric", "weaving", "garment", "apparel"],
+    "handicrafts": ["handicrafts", "handicraft", "artisan", "pottery", "woodwork", "bamboo"],
+    "transport": ["transport", "logistics", "fleet", "auto", "vehicle"],
+}
+
+
+def _resolve_category(user_input: str) -> list[str]:
+    """
+    Resolves a free-text business category into one or more canonical category names
+    that can be matched against scheme eligible_categories lists.
+    """
+    normalised = user_input.strip().lower()
+    matched: list[str] = []
+
+    for canonical, aliases in _CATEGORY_ALIASES.items():
+        if any(alias in normalised for alias in aliases):
+            matched.append(canonical)
+
+    if not matched:
+        for canonical in _CATEGORY_ALIASES:
+            if canonical in normalised or normalised in canonical:
+                matched.append(canonical)
+
+    return matched if matched else [normalised]
+
+
+def filter_schemes(investment_amount: float, business_category: str) -> list[dict]:
+    """
+    Rule-based recommendation engine.
+    Filters schemes_db.json entries where:
+      1. investment_amount falls within [min_investment, max_investment]
+      2. The user's business_category matches at least one eligible_categories entry.
+    """
+    resolved_categories = _resolve_category(business_category)
+
+    results: list[dict] = []
+    for scheme in SCHEMES_DB:
+        min_inv = scheme.get("min_investment", 0)
+        max_inv = scheme.get("max_investment", float("inf"))
+
+        if not (min_inv <= investment_amount <= max_inv):
+            continue
+
+        eligible = [cat.lower() for cat in scheme.get("eligible_categories", [])]
+        if not any(rc in eligible for rc in resolved_categories):
+            continue
+
+        results.append(scheme)
+
+    return results
 
 
 # Static dictionary mapping business categories to mock government schemes
@@ -602,6 +680,21 @@ def get_competitors_endpoint(payload: BusinessAnalysisRequest):
         location=payload.location,
         business_category=payload.business_category
     )
+
+
+@app.post("/api/schemes", response_model=List[SchemeRecommendationResponse])
+def recommend_schemes_endpoint(payload: SchemeRecommendationRequest):
+    """
+    Rule-based recommendation engine.
+    Accepts investment_amount and business_category, filters schemes_db.json
+    to return only schemes where the investment falls within [min, max] range
+    and the category matches the eligibility list.
+    """
+    matched = filter_schemes(
+        investment_amount=payload.investment_amount,
+        business_category=payload.business_category
+    )
+    return matched
 
 
 @app.post("/api/business-analysis")

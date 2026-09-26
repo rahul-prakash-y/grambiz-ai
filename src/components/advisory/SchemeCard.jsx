@@ -6,7 +6,8 @@ import {
   Check, 
   Landmark, 
   ArrowUpRight, 
-  Coins
+  Coins,
+  ExternalLink
 } from 'lucide-react';
 
 export default function SchemeCard({
@@ -18,10 +19,24 @@ export default function SchemeCard({
 }) {
   if (!scheme) return null;
 
+  // Normalize between static schemes and backend rule-based schemes from /api/schemes
+  const schemeName = scheme.scheme_name || scheme.name || "Government Scheme";
+  const shortCode = scheme.shortCode || (scheme.scheme_name ? scheme.scheme_name.split(' ')[0] : "GOVT");
+  const subsidyPct = scheme.subsidyPct || scheme.subsidy || "25% - 35%";
+  const nodalAgency = scheme.nodalAgency || (scheme.official_link ? "Govt of India" : "MSME / NABARD");
+  const nodalAgencyTa = scheme.nodalAgencyTa || nodalAgency;
+  const description = scheme.description || "";
+  const maxSubsidy = scheme.maxSubsidy || (scheme.max_investment ? `Up to ₹${Number(scheme.max_investment).toLocaleString('en-IN')}` : "₹2.5 Lakh – ₹25 Lakh");
+  const eligibility = scheme.eligibility || (scheme.eligible_categories?.length ? `Eligible: ${scheme.eligible_categories.join(', ')}` : "Rural entrepreneurs & self-help groups");
+  const interestRate = scheme.interestRate || "7.5% - 9.5%";
+  const targetOutlay = scheme.targetOutlay || (scheme.max_investment ? `₹${Number(scheme.min_investment || 0).toLocaleString('en-IN')} - ₹${Number(scheme.max_investment).toLocaleString('en-IN')}` : "₹10 Lakh");
+  const targetOutlayTa = scheme.targetOutlayTa || targetOutlay;
+  const officialLink = scheme.official_link;
+
   return (
     <div 
       className={`bg-white rounded-2xl p-5 sm:p-6 border border-slate-200/90 shadow-xs hover:border-emerald-300 transition-all card-hover-effect flex flex-col justify-between relative overflow-hidden ${className}`}
-      data-scheme-id={scheme.id}
+      data-scheme-id={scheme.id || scheme.scheme_name}
     >
       {/* Top Banner with Scheme Short Code & Nodal Agency */}
       <div>
@@ -33,14 +48,14 @@ export default function SchemeCard({
             <div>
               <div className="flex items-center gap-2">
                 <span className="font-extrabold text-base sm:text-lg text-slate-900 tracking-tight">
-                  {scheme.shortCode}
+                  {shortCode}
                 </span>
                 <span className="badge badge-sm badge-success text-white font-bold">
-                  {scheme.subsidyPct}
+                  {subsidyPct}
                 </span>
               </div>
               <span className="text-[11px] font-semibold text-slate-500 block truncate max-w-xs">
-                {lang === 'ta' ? (scheme.nodalAgencyTa || scheme.nodalAgency) : scheme.nodalAgency}
+                {lang === 'ta' ? nodalAgencyTa : nodalAgency}
               </span>
             </div>
           </div>
@@ -53,7 +68,7 @@ export default function SchemeCard({
         {/* Scheme Full Title */}
         <div className="mt-3">
           <TranslatableText
-            text={scheme.name}
+            text={schemeName}
             tamilPlaceholder={scheme.tamilPlaceholder}
             lang={lang}
             showDual={showDual}
@@ -61,7 +76,7 @@ export default function SchemeCard({
             as="h4"
           />
           <TranslatableText
-            text={scheme.description}
+            text={description}
             tamilPlaceholder={scheme.tamilDescriptionPlaceholder}
             lang={lang}
             showDual={showDual}
@@ -79,7 +94,7 @@ export default function SchemeCard({
               <span>{lang === 'ta' ? 'அதிகபட்ச மானியம் (Max Subsidy):' : 'Max Subsidy Tag:'}</span>
             </div>
             <TranslatableText
-              text={scheme.maxSubsidy}
+              text={maxSubsidy}
               tamilPlaceholder={scheme.tamilMaxSubsidyPlaceholder}
               lang={lang}
               showDual={showDual}
@@ -95,7 +110,7 @@ export default function SchemeCard({
               <span>{lang === 'ta' ? 'தகுதி வரம்பு (Eligibility):' : 'Eligibility Tag:'}</span>
             </div>
             <TranslatableText
-              text={scheme.eligibility}
+              text={eligibility}
               tamilPlaceholder={scheme.tamilEligibilityPlaceholder}
               lang={lang}
               showDual={showDual}
@@ -111,14 +126,14 @@ export default function SchemeCard({
             <span className="text-[10px] text-slate-400 font-bold block uppercase">
               {lang === 'ta' ? 'வட்டி விகிதம்' : 'Interest Rate'}
             </span>
-            <span className="font-extrabold text-slate-800">{scheme.interestRate}</span>
+            <span className="font-extrabold text-slate-800">{interestRate}</span>
           </div>
           <div>
             <span className="text-[10px] text-slate-400 font-bold block uppercase">
               {lang === 'ta' ? 'திட்ட வரம்பு' : 'Target Outlay'}
             </span>
             <span className="font-extrabold text-slate-800">
-              {lang === 'ta' ? (scheme.targetOutlayTa || scheme.targetOutlay) : scheme.targetOutlay}
+              {lang === 'ta' ? targetOutlayTa : targetOutlay}
             </span>
           </div>
         </div>
@@ -148,18 +163,32 @@ export default function SchemeCard({
         <div className="flex items-center gap-1.5 text-[11px] text-slate-500 font-medium truncate">
           <Landmark className="w-3.5 h-3.5 text-slate-400 shrink-0" />
           <span className="truncate">
-            {lang === 'ta' ? (scheme.bankPartnersTa || scheme.bankPartners) : scheme.bankPartners}
+            {lang === 'ta' ? (scheme.bankPartnersTa || scheme.bankPartners || "அரசு அங்கீகாரம்") : (scheme.bankPartners || "SBI, Indian Bank, Canara Bank")}
           </span>
         </div>
 
-        <button
-          type="button"
-          onClick={() => onNavigate && onNavigate('calculator')}
-          className="btn btn-xs btn-primary gap-1 font-bold rounded-lg text-white shrink-0 shadow-xs"
-        >
-          <span>{lang === 'ta' ? 'ROI கணக்கிடு' : 'Calculate EMI'}</span>
-          <ArrowUpRight className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1.5 shrink-0">
+          {officialLink && (
+            <a
+              href={officialLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="btn btn-xs bg-slate-100 hover:bg-slate-200 text-slate-700 border-none font-bold rounded-lg gap-1"
+              title="Open official government scheme website"
+            >
+              <span>{lang === 'ta' ? 'அரசு தளம்' : 'Portal'}</span>
+              <ExternalLink className="w-3 h-3 text-slate-500" />
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => onNavigate && onNavigate('calculator')}
+            className="btn btn-xs btn-primary gap-1 font-bold rounded-lg text-white shadow-xs"
+          >
+            <span>{lang === 'ta' ? 'EMI' : 'Calculate'}</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
     </div>
   );

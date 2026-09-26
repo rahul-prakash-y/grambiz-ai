@@ -114,9 +114,43 @@ export async function calculateFinance(projectCost, availableCapital, interestRa
   }
 }
 
+/**
+ * Connects to POST /api/schemes
+ * Rule-based recommendation engine filtering schemes_db.json by investment amount and business category.
+ * 
+ * @param {number} investmentAmount - User's available investment amount in INR
+ * @param {string} category - Business category (e.g., Agriculture, Manufacturing, Retail)
+ * @returns {Promise<Array<{scheme_name: string, min_investment: number, max_investment: number, eligible_categories: string[], description: string, official_link: string}>>}
+ */
+export async function fetchRecommendedSchemes(investmentAmount, category) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/api/schemes`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        investment_amount: Number(investmentAmount) || 250000,
+        business_category: category || 'Agriculture',
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.detail || `Failed to fetch recommended schemes (HTTP ${response.status})`);
+    }
+
+    return await response.json();
+  } catch (err) {
+    console.warn(`[api.js] fetchRecommendedSchemes error: ${err.message}.`);
+    throw err;
+  }
+}
+
 export default {
   fetchCompetitors,
   fetchAdvisory,
   calculateFinance,
+  fetchRecommendedSchemes,
   API_BASE_URL,
 };

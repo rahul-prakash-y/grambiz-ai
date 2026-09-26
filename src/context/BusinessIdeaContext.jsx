@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fetchCompetitors, fetchAdvisory, calculateFinance } from '../api';
+import { fetchCompetitors, fetchAdvisory, calculateFinance, fetchRecommendedSchemes } from '../api';
 
 const BusinessIdeaContext = createContext(null);
 
@@ -238,6 +238,7 @@ export function BusinessIdeaProvider({ children }) {
   const [competitors, setCompetitors] = useState([]);
   const [advisory, setAdvisory] = useState(null);
   const [financials, setFinancials] = useState(null);
+  const [recommendedSchemes, setRecommendedSchemes] = useState([]);
 
   // Analysis loading & feedback state
   const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -353,11 +354,12 @@ export function BusinessIdeaProvider({ children }) {
       setAnalysisProgress(30);
       setAnalysisStepText(`Querying Google Places competitors & GenAI Advisory for ${cat} in ${loc}...`);
 
-      // 1. Concurrently call the 3 backend endpoints
-      const [compRes, advRes, finRes] = await Promise.allSettled([
+      // 1. Concurrently call backend endpoints
+      const [compRes, advRes, finRes, schRes] = await Promise.allSettled([
         fetchCompetitors(loc, cat, invest),
         fetchAdvisory(loc, cat, invest),
-        calculateFinance(estProjectCost, invest, 8.5, 48, cat)
+        calculateFinance(estProjectCost, invest, 8.5, 48, cat),
+        fetchRecommendedSchemes(invest, cat)
       ]);
 
       setAnalysisProgress(70);
@@ -366,6 +368,7 @@ export function BusinessIdeaProvider({ children }) {
       let realCompetitors = null;
       let realAdvisory = null;
       let realFinancials = null;
+      let realSchemes = [];
 
       // Handle Competitors response
       if (compRes.status === 'fulfilled' && Array.isArray(compRes.value)) {
@@ -393,6 +396,17 @@ export function BusinessIdeaProvider({ children }) {
         console.warn('[BusinessIdeaContext] calculateFinance note:', finRes.reason?.message || 'Using fallback data');
       }
 
+      // Handle Recommended Schemes response from /api/schemes
+      if (schRes.status === 'fulfilled' && Array.isArray(schRes.value)) {
+        realSchemes = schRes.value;
+        setRecommendedSchemes(realSchemes);
+        if (realFinancials && (!realFinancials.schemes || realFinancials.schemes.length === 0)) {
+          realFinancials.schemes = realSchemes;
+        }
+      } else {
+        console.warn('[BusinessIdeaContext] fetchRecommendedSchemes note:', schRes.reason?.message || 'Using fallback schemes');
+      }
+
       setAnalysisProgress(95);
       setAnalysisStepText('Populating Map radar, SWOT grid, and EMI dashboard...');
 
@@ -403,6 +417,7 @@ export function BusinessIdeaProvider({ children }) {
         competitors: realCompetitors || [],
         advisory: realAdvisory || null,
         financials: realFinancials || null,
+        recommendedSchemes: realSchemes || [],
         backendLive: true
       };
 
@@ -448,6 +463,7 @@ export function BusinessIdeaProvider({ children }) {
         competitors,
         advisory,
         financials,
+        recommendedSchemes,
         triggerAnalysis,
         calculateFinanceLive,
         categoryOptions: Object.keys(CATEGORY_DETAILS),

@@ -23,13 +23,19 @@ class BusinessAnalysisRequest(BaseModel):
         description="Available investment capital in INR",
         examples=[250000.0]
     )
+    target_language: Optional[str] = Field(
+        default="en",
+        description="Target language for the response. 'en' for English (default), 'ta' for Tamil translation.",
+        examples=["en", "ta"]
+    )
 
     model_config = {
         "json_schema_extra": {
             "example": {
                 "location": "Varanasi, UP",
                 "business_category": "Dairy Farming",
-                "available_investment": 250000.0
+                "available_investment": 250000.0,
+                "target_language": "en"
             }
         }
     }
@@ -195,3 +201,53 @@ class AdvisoryResponse(BaseModel):
     }
 
 
+class SchemeRecommendationRequest(BaseModel):
+    """
+    Request schema for rule-based government scheme recommendation.
+    Filters schemes_db.json by investment amount and business category.
+    """
+    investment_amount: float = Field(
+        ...,
+        gt=0.0,
+        description="User's available investment amount in INR",
+        examples=[300000.0]
+    )
+    business_category: str = Field(
+        ...,
+        description="Business category to match against scheme eligibility lists (e.g., Agriculture, Manufacturing, Retail)",
+        examples=["Agriculture"]
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "investment_amount": 300000.0,
+                "business_category": "Agriculture"
+            }
+        }
+    }
+
+
+class SchemeRecommendationResponse(BaseModel):
+    """
+    Response schema for a single recommended government scheme.
+    """
+    scheme_name: str = Field(..., description="Official name of the government scheme")
+    min_investment: float = Field(..., description="Minimum eligible investment amount in INR")
+    max_investment: float = Field(..., description="Maximum eligible investment amount in INR")
+    eligible_categories: List[str] = Field(default_factory=list, description="List of eligible business categories")
+    description: str = Field(..., description="Summary of the scheme benefits and eligibility criteria")
+    official_link: str = Field(..., description="Official website URL for the scheme")
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "scheme_name": "Pradhan Mantri MUDRA Yojana (PMMY)",
+                "min_investment": 5000.0,
+                "max_investment": 1000000.0,
+                "eligible_categories": ["Retail", "Services", "Manufacturing"],
+                "description": "Collateral-free micro-credit under three tiers for non-farm small/micro enterprises.",
+                "official_link": "https://www.mudra.org.in/"
+            }
+        }
+    }

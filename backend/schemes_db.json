@@ -1,0 +1,112 @@
+[
+  {
+    "scheme_name": "Prime Minister's Employment Generation Programme (PMEGP)",
+    "min_investment": 10000,
+    "max_investment": 5000000,
+    "eligible_categories": [
+      "Manufacturing",
+      "Services",
+      "Retail",
+      "Agriculture",
+      "Food Processing",
+      "Handicrafts",
+      "Textiles"
+    ],
+    "description": "Government-backed margin money subsidy of 25%-35% for setting up new micro-enterprises in rural and urban areas. Rural applicants receive higher subsidy rates. Project cost ceiling is ₹50 Lakh for manufacturing and ₹20 Lakh for service/trade sectors.",
+    "official_link": "https://www.kviconline.gov.in/pmegp/pmegpweb/index.jsp"
+  },
+  {
+    "scheme_name": "Pradhan Mantri MUDRA Yojana (PMMY)",
+    "min_investment": 5000,
+    "max_investment": 1000000,
+    "eligible_categories": [
+      "Retail",
+      "Services",
+      "Manufacturing",
+      "Agriculture",
+      "Food Processing",
+      "Transport",
+      "Textiles"
+    ],
+    "description": "Collateral-free institutional micro-credit under three tiers — Shishu (up to ₹50K), Kishore (₹50K–₹5L), and Tarun (₹5L–₹10L) — for non-corporate, non-farm small/micro enterprises. Loans are available through banks, MFIs, and NBFCs.",
+    "official_link": "https://www.mudra.org.in/"
+  },
+  {
+    "scheme_name": "Stand-Up India Scheme",
+    "min_investment": 1000000,
+    "max_investment": 10000000,
+    "eligible_categories": [
+      "Manufacturing",
+      "Services",
+      "Agriculture",
+      "Retail",
+      "Food Processing"
+    ],
+    "description": "Bank loans between ₹10 Lakh and ₹1 Crore for greenfield enterprises in manufacturing, services, or trading. Targets at least one SC/ST and one woman entrepreneur per bank branch. Covers up to 75% of project cost.",
+    "official_link": "https://www.standupmitra.in/"
+  },
+  {
+    "scheme_name": "PM Formalisation of Micro Food Processing Enterprises (PMFME)",
+    "min_investment": 25000,
+    "max_investment": 1000000,
+    "eligible_categories": [
+      "Food Processing",
+      "Agriculture",
+      "Dairy",
+      "Manufacturing"
+    ],
+    "description": "Credit-linked capital subsidy of 35% (max ₹10 Lakh) for individual micro food processing units. Supports existing and new units in One District One Product (ODOP) categories including bakery, spices, pickles, dairy, and grain milling.",
+    "official_link": "https://pmfme.mofpi.gov.in/"
+  },
+  {
+    "scheme_name": "NABARD Dairy Entrepreneurship Development Scheme (DEDS)",
+    "min_investment": 50000,
+    "max_investment": 2000000,
+    "eligible_categories": [
+      "Dairy",
+      "Agriculture",
+      "Food Processing"
+    ],
+    "description": "Capital subsidy of 25%-33.33% for setting up small dairy farms (minimum 2 milch animals), calf rearing, milk chilling, and value-added dairy product units. Back-ended subsidy routed through NABARD to commercial and cooperative banks.",
+    "official_link": "https://www.nabard.org/content1.aspx?id=591&catid=23&mid=530"
+  },
+  {
+    "scheme_name": "Credit Guarantee Fund Trust for Micro & Small Enterprises (CGTMSE)",
+    "min_investment": 100000,
+    "max_investment": 20000000,
+    "eligible_categories": [
+      "Manufacturing",
+      "Services",
+      "Retail",
+      "Food Processing",
+      "Textiles",
+      "Handicrafts"
+    ],
+    "description": "Collateral-free credit facility with up to 85% credit guarantee coverage for loans up to ₹2 Crore. No third-party guarantee or collateral required. Available for both new and existing MSEs through eligible lending institutions.",
+    "official_link": "https://www.cgtmse.in/"
+  },
+  {
+    "scheme_name": "Agriculture Infrastructure Fund (AIF)",
+    "min_investment": 500000,
+    "max_investment": 20000000,
+    "eligible_categories": [
+      "Agriculture",
+      "Food Processing",
+      "Dairy"
+    ],
+    "description": "Medium-to-long term debt financing with 3% annual interest subvention (up to ₹2 Crore) and CGTMSE credit guarantee for post-harvest management infrastructure — cold storage, warehousing, sorting, grading, and packaging facilities.",
+    "official_link": "https://agriinfra.dac.gov.in/"
+  },
+  {
+    "scheme_name": "PM SVANidhi – Street Vendor's AtmaNirbhar Nidhi",
+    "min_investment": 5000,
+    "max_investment": 50000,
+    "eligible_categories": [
+      "Retail",
+      "Services",
+      "Food Processing"
+    ],
+    "description": "Affordable collateral-free working capital loan of ₹10K–₹50K with 7% interest subsidy and cashback incentive for digital transactions. Targets street vendors, hawkers, and micro-retailers in urban and semi-urban areas.",
+    "official_link": "https://pmsvanidhi.mohua.gov.in/"
+  }
+]
