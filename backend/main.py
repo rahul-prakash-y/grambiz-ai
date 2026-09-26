@@ -677,18 +677,19 @@ Return ONLY raw JSON. Do NOT wrap in markdown code blocks or add any additional 
 generate_advisory = generate_business_advisory
 
 
-@app.get("/")
+@app.api_route("/", methods=["GET", "HEAD"])
 def health_check():
     """
     Health check endpoint returning GramBiz API status.
+    Supports both GET and HEAD requests (e.g. for UptimeRobot, Render health checks).
     """
     return {"status": "GramBiz API is running"}
 
 
-@app.get("/health")
+@app.api_route("/health", methods=["GET", "HEAD"])
 def health_check_alias():
     """
-    Alternative /health endpoint alias.
+    Alternative /health endpoint alias supporting both GET and HEAD.
     """
     return {"status": "GramBiz API is running"}
 
