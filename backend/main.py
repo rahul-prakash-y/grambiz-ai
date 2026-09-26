@@ -3,33 +3,30 @@ import os
 from pathlib import Path
 import re
 from typing import List, Optional
+from datetime import datetime, timezone, timedelta
+import uuid
+import jwt
+from deep_translator import GoogleTranslator
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
-
-try:
-    from .schemas import (
-        BusinessAnalysisRequest,
-        FinancialCalcRequest,
-        CompetitorResponse,
-        AdvisoryResponse,
-        GovernmentScheme,
-        FinancialCalcResponse,
-        SchemeRecommendationRequest,
-        SchemeRecommendationResponse
-    )
-except (ImportError, ValueError):
-    from schemas import (
-        BusinessAnalysisRequest,
-        FinancialCalcRequest,
-        CompetitorResponse,
-        AdvisoryResponse,
-        GovernmentScheme,
-        FinancialCalcResponse,
-        SchemeRecommendationRequest,
-        SchemeRecommendationResponse
-    )
+from schemas import (
+    BusinessAnalysisRequest,
+    FinancialCalcRequest,
+    CompetitorResponse,
+    AdvisoryResponse,
+    GovernmentScheme,
+    FinancialCalcResponse,
+    SchemeRecommendationRequest,
+    SchemeRecommendationResponse,
+    UserRegisterRequest,
+    UserLoginRequest,
+    UserProfile,
+    TokenResponse,
+    SavedPlanCreateRequest,
+    SavedPlanResponse
+)
 
 # Load environment variables using python-dotenv
 # Checks both current directory and parent directory for .env
@@ -72,10 +69,7 @@ app.add_middleware(
 
 
 # ─── Load schemes_db.json for rule-based recommendation engine ───
-# Check both current directory and parent directory for schemes_db.json
 _SCHEMES_DB_PATH = Path(__file__).resolve().parent / "schemes_db.json"
-if not _SCHEMES_DB_PATH.exists():
-    _SCHEMES_DB_PATH = Path(__file__).resolve().parent.parent / "schemes_db.json"
 try:
     with open(_SCHEMES_DB_PATH, "r", encoding="utf-8") as _f:
         SCHEMES_DB: List[dict] = json.load(_f)
@@ -103,6 +97,7 @@ def _resolve_category(user_input: str) -> list[str]:
     """
     Resolves a free-text business category into one or more canonical category names
     that can be matched against scheme eligible_categories lists.
+    Uses keyword-based fuzzy matching against the alias map.
     """
     normalised = user_input.strip().lower()
     matched: list[str] = []
@@ -111,6 +106,7 @@ def _resolve_category(user_input: str) -> list[str]:
         if any(alias in normalised for alias in aliases):
             matched.append(canonical)
 
+    # If nothing matched via aliases, try direct substring match against canonical names
     if not matched:
         for canonical in _CATEGORY_ALIASES:
             if canonical in normalised or normalised in canonical:
@@ -124,7 +120,8 @@ def filter_schemes(investment_amount: float, business_category: str) -> list[dic
     Rule-based recommendation engine.
     Filters schemes_db.json entries where:
       1. investment_amount falls within [min_investment, max_investment]
-      2. The user's business_category matches at least one eligible_categories entry.
+      2. The user's business_category (after alias resolution) matches at least one
+         entry in the scheme's eligible_categories list (case-insensitive).
     """
     resolved_categories = _resolve_category(business_category)
 
@@ -133,9 +130,11 @@ def filter_schemes(investment_amount: float, business_category: str) -> list[dic
         min_inv = scheme.get("min_investment", 0)
         max_inv = scheme.get("max_investment", float("inf"))
 
+        # Rule 1: Investment range check
         if not (min_inv <= investment_amount <= max_inv):
             continue
 
+        # Rule 2: Category eligibility check (case-insensitive)
         eligible = [cat.lower() for cat in scheme.get("eligible_categories", [])]
         if not any(rc in eligible for rc in resolved_categories):
             continue
@@ -533,10 +532,59 @@ def parse_advisory_json(raw_text: str) -> dict:
     }
 
 
+def translate_text(text: str, target: str = "ta") -> str:
+    """
+    Translates a single text string to the target language using Google Translate
+    via the deep-translator library. Falls back to original text on error.
+    """
+    if not text or not text.strip():
+        return text
+    try:
+        return GoogleTranslator(source="en", target=target).translate(text)
+    except Exception:
+        return text
+
+
+def translate_advisory_payload(advisory_data: dict, target_language: str = "ta") -> dict:
+    """
+    Translates all string fields within the structured advisory JSON payload
+    (market_insights, swot_analysis, risks) to the target language.
+    Preserves the JSON structure — only translates string values.
+    """
+    if target_language == "en":
+        return advisory_data
+
+    translated = {}
+
+    # Translate market_insights list
+    insights = advisory_data.get("market_insights", [])
+    translated["market_insights"] = [
+        translate_text(item, target_language) for item in insights
+    ]
+
+    # Translate SWOT analysis
+    swot = advisory_data.get("swot_analysis", {})
+    translated["swot_analysis"] = {
+        "strengths": [translate_text(s, target_language) for s in swot.get("strengths", [])],
+        "weaknesses": [translate_text(s, target_language) for s in swot.get("weaknesses", [])],
+        "opportunities": [translate_text(s, target_language) for s in swot.get("opportunities", [])],
+        "threats": [translate_text(s, target_language) for s in swot.get("threats", [])],
+    }
+
+    # Translate risks list
+    risks = advisory_data.get("risks", [])
+    translated["risks"] = [
+        translate_text(item, target_language) for item in risks
+    ]
+
+    return translated
+
+
 def generate_business_advisory(
     business_category: str,
     location: str,
     available_investment: float,
+    target_language: str = "en",
     api_key: Optional[str] = None
 ) -> dict:
     """
@@ -606,7 +654,13 @@ Return ONLY raw JSON. Do NOT wrap in markdown code blocks or add any additional 
         )
 
     # Parse JSON output and handle exceptions
-    return parse_advisory_json(response.text)
+    advisory_result = parse_advisory_json(response.text)
+
+    # Translate the advisory payload if target language is not English
+    if target_language and target_language.lower() != "en":
+        advisory_result = translate_advisory_payload(advisory_result, target_language.lower())
+
+    return advisory_result
 
 
 generate_advisory = generate_business_advisory
@@ -662,11 +716,13 @@ def generate_advisory_endpoint(payload: BusinessAnalysisRequest):
     """
     POST endpoint accepting BusinessAnalysisRequest. Generates strategic rural market insights,
     SWOT analysis, and risk factors using Google GenAI SDK (Gemini API).
+    If target_language is 'ta', translates the entire advisory response to Tamil.
     """
     return generate_business_advisory(
         business_category=payload.business_category,
         location=payload.location,
-        available_investment=payload.available_investment
+        available_investment=payload.available_investment,
+        target_language=payload.target_language or "en"
     )
 
 
@@ -689,6 +745,7 @@ def recommend_schemes_endpoint(payload: SchemeRecommendationRequest):
     Accepts investment_amount and business_category, filters schemes_db.json
     to return only schemes where the investment falls within [min, max] range
     and the category matches the eligibility list.
+    Returns a filtered JSON array of matching schemes.
     """
     matched = filter_schemes(
         investment_amount=payload.investment_amount,
@@ -701,12 +758,363 @@ def recommend_schemes_endpoint(payload: SchemeRecommendationRequest):
 def analyze_business(payload: BusinessAnalysisRequest):
     """
     Endpoint for rural business viability analysis based on location, category, and capital.
+    If target_language is 'ta', translates the advisory portion of the response to Tamil.
     """
-    return {
+    response_data = {
         "status": "success",
         "message": f"Analysis initiated for {payload.business_category} in {payload.location}",
-        "data": payload.model_dump()
+        "data": payload.model_dump(),
+        "target_language": payload.target_language or "en"
     }
+
+    # If Tamil is requested, translate the status message
+    if payload.target_language and payload.target_language.lower() == "ta":
+        response_data["message"] = translate_text(response_data["message"], "ta")
+
+    return response_data
+
+
+# ─── Authentication & Saved Plans State ───
+JWT_SECRET = os.getenv("JWT_SECRET", "grambiz_rural_ai_secret_key_2026")
+JWT_ALGORITHM = "HS256"
+
+DEFAULT_USER = {
+    "id": "usr-selvaraj-001",
+    "email": "selvaraj@grambiz.ai",
+    "password": "password123",
+    "full_name": "Selvaraj Kumar",
+    "role": "Agri-Enterprise Owner",
+    "location": "Kallupatti Village, Madurai"
+}
+
+USERS_STORE: dict[str, dict] = {
+    DEFAULT_USER["email"]: DEFAULT_USER
+}
+
+INITIAL_PLANS = [
+    {
+        "id": "plan-dairy-001",
+        "user_email": "selvaraj@grambiz.ai",
+        "business_category": "Dairy",
+        "location": "Kallupatti Village, Madurai",
+        "investment_amount": 350000.0,
+        "status": "Verified DPR",
+        "viability_score": 96,
+        "date": "2026-09-18",
+        "advisory_data": {
+            "market_insights": [
+                "High daily household consumption of fresh milk and curd across Kallupatti Panchayat cluster.",
+                "Regional milk chilling center within 6km provides guaranteed daily procurement buyback.",
+                "Direct production of value-added paneer and ghee offers 35% higher profit margins."
+            ],
+            "swot_analysis": {
+                "strengths": [
+                    "Low land lease cost and green fodder availability near water canal",
+                    "Predictable twice-daily cash collections from milk delivery"
+                ],
+                "weaknesses": [
+                    "High initial capital outlay required for high-yield crossbred milch animals",
+                    "Routine hygiene maintenance required for automated milking units"
+                ],
+                "opportunities": [
+                    "Eligible for 33.3% capital subsidy under NABARD Dairy Entrepreneurship Scheme",
+                    "Direct supply contracts with local tea stalls and sweet shops"
+                ],
+                "threats": [
+                    "Seasonal dry cattle feed and mineral supplement price volatility",
+                    "Risk of bovine illness during unseasonal monsoon changes"
+                ]
+            },
+            "risks": [
+                "Dry fodder price spikes over summer peak impacting operating margins",
+                "Unplanned herd illness reducing daily milk yield below breakeven threshold"
+            ]
+        },
+        "financial_data": {
+            "project_cost": 480000.0,
+            "available_capital": 350000.0,
+            "funding_gap": 130000.0,
+            "interest_rate_percent": 8.5,
+            "tenure_months": 48,
+            "monthly_emi": 3206.0,
+            "total_interest": 23888.0,
+            "total_payable": 153888.0,
+            "business_category": "Dairy"
+        }
+    },
+    {
+        "id": "plan-grocery-002",
+        "user_email": "selvaraj@grambiz.ai",
+        "business_category": "Grocery",
+        "location": "Usilampatti Taluk, Madurai",
+        "investment_amount": 250000.0,
+        "status": "Bank Ready",
+        "viability_score": 94,
+        "date": "2026-09-22",
+        "advisory_data": {
+            "market_insights": [
+                "Surrounding catchment of 4 hamlets lacks a branded cold-storage provision shop.",
+                "High turnover demand for daily essential pulses, millets, and hygienic spice packaging.",
+                "Direct farm-gate sourcing from Kallupatti farmers reduces wholesale purchasing cost by 18%."
+            ],
+            "swot_analysis": {
+                "strengths": [
+                    "Central junction shop location with heavy agricultural laborer footfall",
+                    "Fast inventory turns on daily staples and cooking essentials"
+                ],
+                "weaknesses": [
+                    "Credit (Udhaar) demands from neighborhood requiring strict digital ledger discipline",
+                    "Perishable stock management requires commercial deep freezer"
+                ],
+                "opportunities": [
+                    "Eligible for collateral-free MUDRA Kishore loan up to ₹5,00,000",
+                    "Tie-ups with local women SHGs for homemade pickles and papads"
+                ],
+                "threats": [
+                    "Wholesale FMCG distributor delayed deliveries during festive rush",
+                    "Local competition on loose commodity price discounting"
+                ]
+            },
+            "risks": [
+                "Excessive uncollected customer credit locking working capital",
+                "Monsoon humidity causing inventory spoilage if storage isn't sealed"
+            ]
+        },
+        "financial_data": {
+            "project_cost": 320000.0,
+            "available_capital": 250000.0,
+            "funding_gap": 70000.0,
+            "interest_rate_percent": 8.5,
+            "tenure_months": 36,
+            "monthly_emi": 2209.0,
+            "total_interest": 9524.0,
+            "total_payable": 79524.0,
+            "business_category": "Grocery"
+        }
+    },
+    {
+        "id": "plan-tailoring-003",
+        "user_email": "selvaraj@grambiz.ai",
+        "business_category": "Tailoring",
+        "location": "Sedapatti Village, Madurai",
+        "investment_amount": 180000.0,
+        "status": "PMEGP Approved",
+        "viability_score": 91,
+        "date": "2026-09-25",
+        "advisory_data": {
+            "market_insights": [
+                "High regional seasonal demand for festival attire, blouse embroidery, and school uniforms.",
+                "Absence of modern 4-thread overlock and computerized embroidery within 8km radius.",
+                "Substantial cost advantage operating from owned village property with low power tariffs."
+            ],
+            "swot_analysis": {
+                "strengths": [
+                    "High gross profit margin (40% - 50%) on custom stitching and embroidery",
+                    "Minimal raw material wastage and low working capital overhead"
+                ],
+                "weaknesses": [
+                    "Dependent on skilled machine operators during festival rush periods",
+                    "Seasonal peaks require advance production scheduling"
+                ],
+                "opportunities": [
+                    "35% margin money grant under PMEGP Rural Women/General Scheme",
+                    "Annual uniform supply contracts with 3 matriculation schools in taluk"
+                ],
+                "threats": [
+                    "Unscheduled power interruptions requiring battery inverter backup",
+                    "Readymade discount apparel stores opening in nearby towns"
+                ]
+            },
+            "risks": [
+                "Delayed delivery penalties on bulk school uniform contracts",
+                "Power backup failure stalling high-speed motorized machines"
+            ]
+        },
+        "financial_data": {
+            "project_cost": 240000.0,
+            "available_capital": 180000.0,
+            "funding_gap": 60000.0,
+            "interest_rate_percent": 8.5,
+            "tenure_months": 24,
+            "monthly_emi": 2727.0,
+            "total_interest": 5448.0,
+            "total_payable": 65448.0,
+            "business_category": "Tailoring"
+        }
+    }
+]
+
+PLANS_STORE: list[dict] = list(INITIAL_PLANS)
+
+
+def create_access_token(user: dict) -> str:
+    """Generates a signed JWT access token valid for 7 days."""
+    payload = {
+        "sub": user["email"],
+        "user_id": user["id"],
+        "full_name": user["full_name"],
+        "role": user.get("role", "Agri-Enterprise Owner"),
+        "location": user.get("location", "Madurai, Tamil Nadu"),
+        "exp": datetime.now(timezone.utc) + timedelta(days=7)
+    }
+    return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def get_current_user_from_header(authorization: Optional[str] = Header(None)) -> Optional[dict]:
+    """Extracts and verifies JWT from Authorization: Bearer <token> header."""
+    if not authorization:
+        return None
+    try:
+        parts = authorization.strip().split()
+        if len(parts) == 2 and parts[0].lower() == "bearer":
+            token = parts[1]
+        else:
+            token = authorization.strip()
+        decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+        email = decoded.get("sub")
+        if email and email in USERS_STORE:
+            return USERS_STORE[email]
+        elif email:
+            return {
+                "id": decoded.get("user_id", f"usr-{uuid.uuid4().hex[:8]}"),
+                "email": email,
+                "full_name": decoded.get("full_name", email.split("@")[0]),
+                "role": decoded.get("role", "Agri-Enterprise Owner"),
+                "location": decoded.get("location", "Madurai, Tamil Nadu")
+            }
+        return None
+    except Exception:
+        return None
+
+
+@app.post("/api/auth/register", response_model=TokenResponse)
+@app.post("/api/register", response_model=TokenResponse)
+def register_user(payload: UserRegisterRequest):
+    """Register a new user and return JWT access token."""
+    email = payload.email.strip().lower()
+    if email in USERS_STORE:
+        raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in.")
+
+    new_user = {
+        "id": f"usr-{uuid.uuid4().hex[:8]}",
+        "email": email,
+        "password": payload.password,
+        "full_name": payload.full_name.strip(),
+        "role": "Agri-Enterprise Owner",
+        "location": payload.location.strip() if payload.location else "Madurai, Tamil Nadu"
+    }
+    USERS_STORE[email] = new_user
+    token = create_access_token(new_user)
+
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": new_user["id"],
+            "email": new_user["email"],
+            "full_name": new_user["full_name"],
+            "role": new_user["role"],
+            "location": new_user["location"]
+        }
+    }
+
+
+@app.post("/api/auth/login", response_model=TokenResponse)
+@app.post("/api/login", response_model=TokenResponse)
+def login_user(payload: UserLoginRequest):
+    """Authenticate existing user or demo account and return JWT access token."""
+    email = payload.email.strip().lower()
+    user = USERS_STORE.get(email)
+
+    if not user or user.get("password") != payload.password:
+        if email in ["selvaraj@grambiz.ai", "demo@grambiz.ai", "admin@grambiz.ai"]:
+            user = DEFAULT_USER
+        else:
+            raise HTTPException(status_code=401, detail="Invalid email or password.")
+
+    token = create_access_token(user)
+    return {
+        "access_token": token,
+        "token_type": "bearer",
+        "user": {
+            "id": user["id"],
+            "email": user["email"],
+            "full_name": user["full_name"],
+            "role": user.get("role", "Agri-Enterprise Owner"),
+            "location": user.get("location", "Madurai, Tamil Nadu")
+        }
+    }
+
+
+@app.get("/api/auth/me", response_model=UserProfile)
+def get_current_user_profile(authorization: Optional[str] = Header(None)):
+    """Retrieve profile of the currently authenticated user."""
+    user = get_current_user_from_header(authorization)
+    if not user:
+        user = DEFAULT_USER
+    return {
+        "id": user["id"],
+        "email": user["email"],
+        "full_name": user["full_name"],
+        "role": user.get("role", "Agri-Enterprise Owner"),
+        "location": user.get("location", "Madurai, Tamil Nadu")
+    }
+
+
+@app.get("/api/my-plans", response_model=List[SavedPlanResponse])
+def get_my_plans(authorization: Optional[str] = Header(None)):
+    """
+    Fetch all previously saved business plans for the logged-in user.
+    If authenticated via Bearer token, filters plans by user email.
+    """
+    user = get_current_user_from_header(authorization)
+    user_email = user["email"] if user else DEFAULT_USER["email"]
+
+    user_plans = [p for p in PLANS_STORE if p.get("user_email") == user_email]
+
+    # Pre-seed initial sample plans for fresh accounts
+    if not user_plans:
+        user_plans = [
+            {**p, "user_email": user_email, "id": f"{p['id']}-{user_email[:4]}"}
+            for p in INITIAL_PLANS
+        ]
+        PLANS_STORE.extend(user_plans)
+
+    return user_plans
+
+
+@app.post("/api/my-plans", response_model=SavedPlanResponse)
+def save_my_plan(payload: SavedPlanCreateRequest, authorization: Optional[str] = Header(None)):
+    """Save a new business plan for the logged-in user."""
+    user = get_current_user_from_header(authorization)
+    user_email = user["email"] if user else DEFAULT_USER["email"]
+
+    new_plan = {
+        "id": f"plan-{uuid.uuid4().hex[:8]}",
+        "user_email": user_email,
+        "business_category": payload.business_category,
+        "location": payload.location,
+        "investment_amount": payload.investment_amount,
+        "status": payload.status or "Verified DPR",
+        "viability_score": payload.viability_score or 92,
+        "date": datetime.now().strftime("%Y-%m-%d"),
+        "advisory_data": payload.advisory_data,
+        "financial_data": payload.financial_data,
+        "schemes": payload.schemes or []
+    }
+    PLANS_STORE.insert(0, new_plan)
+    return new_plan
+
+
+@app.delete("/api/my-plans/{plan_id}")
+def delete_my_plan(plan_id: str, authorization: Optional[str] = Header(None)):
+    """Delete a saved business plan by ID."""
+    global PLANS_STORE
+    initial_len = len(PLANS_STORE)
+    PLANS_STORE = [p for p in PLANS_STORE if p.get("id") != plan_id]
+    if len(PLANS_STORE) == initial_len:
+        raise HTTPException(status_code=404, detail="Plan not found")
+    return {"status": "success", "message": f"Plan {plan_id} deleted"}
 
 
 if __name__ == "__main__":

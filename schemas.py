@@ -251,3 +251,72 @@ class SchemeRecommendationResponse(BaseModel):
             }
         }
     }
+
+
+class UserRegisterRequest(BaseModel):
+    """
+    User registration payload for GramBiz AI.
+    """
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., min_length=4, description="User password")
+    full_name: str = Field(..., description="Full name or enterprise owner name")
+    location: Optional[str] = Field(default="Madurai, Tamil Nadu", description="User village or district")
+
+
+class UserLoginRequest(BaseModel):
+    """
+    User login payload for GramBiz AI.
+    """
+    email: str = Field(..., description="User email address")
+    password: str = Field(..., description="User password")
+
+
+class UserProfile(BaseModel):
+    """
+    Authenticated user profile summary.
+    """
+    id: str
+    email: str
+    full_name: str
+    role: Optional[str] = "Agri-Enterprise Owner"
+    location: Optional[str] = "Madurai, Tamil Nadu"
+
+
+class TokenResponse(BaseModel):
+    """
+    JWT authentication token response.
+    """
+    access_token: str
+    token_type: str = "bearer"
+    user: UserProfile
+
+
+class SavedPlanCreateRequest(BaseModel):
+    """
+    Request payload to save a business plan for the logged-in user.
+    """
+    business_category: str = Field(..., description="Category/type of business")
+    location: str = Field(..., description="Location, village or district")
+    investment_amount: float = Field(..., ge=0.0, description="Planned investment in INR")
+    status: Optional[str] = Field(default="Verified DPR", description="Plan verification status")
+    viability_score: Optional[int] = Field(default=92, description="Viability score (0-100)")
+    advisory_data: Optional[dict] = Field(default=None, description="SWOT analysis and market insights")
+    financial_data: Optional[dict] = Field(default=None, description="Financial projections, EMI & funding gap")
+    schemes: Optional[List[dict]] = Field(default_factory=list, description="Government subsidies applied")
+
+
+class SavedPlanResponse(BaseModel):
+    """
+    Full response model for a saved business plan.
+    """
+    id: str
+    user_email: str
+    business_category: str
+    location: str
+    investment_amount: float
+    status: str
+    viability_score: int
+    date: str
+    advisory_data: Optional[dict] = None
+    financial_data: Optional[dict] = None
+    schemes: Optional[List[dict]] = None

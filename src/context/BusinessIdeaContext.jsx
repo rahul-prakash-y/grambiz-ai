@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { fetchCompetitors, fetchAdvisory, calculateFinance, fetchRecommendedSchemes } from '../api';
+import { fetchCompetitors, fetchAdvisory, calculateFinance, fetchRecommendedSchemes, saveBusinessPlan } from '../api';
 
 const BusinessIdeaContext = createContext(null);
 
@@ -223,7 +223,7 @@ export function adaptBackendCompetitor(comp, centerLat = 9.7346, centerLng = 77.
   };
 }
 
-export function BusinessIdeaProvider({ children }) {
+export function BusinessIdeaProvider({ children, lang = 'en' }) {
   // Global idea data
   const [ideaData, setIdeaData] = useState({
     location: 'Kallupatti Village, Madurai',
@@ -355,9 +355,10 @@ export function BusinessIdeaProvider({ children }) {
       setAnalysisStepText(`Querying Google Places competitors & GenAI Advisory for ${cat} in ${loc}...`);
 
       // 1. Concurrently call backend endpoints
+      // Pass lang (target_language) to fetchAdvisory for Tamil translation
       const [compRes, advRes, finRes, schRes] = await Promise.allSettled([
         fetchCompetitors(loc, cat, invest),
-        fetchAdvisory(loc, cat, invest),
+        fetchAdvisory(loc, cat, invest, lang),
         calculateFinance(estProjectCost, invest, 8.5, 48, cat),
         fetchRecommendedSchemes(invest, cat)
       ]);
@@ -450,6 +451,76 @@ export function BusinessIdeaProvider({ children }) {
     }
   };
 
+  /**
+   * Re-opens a previously saved business plan in the AI Advisory Dashboard layout
+   */
+  const loadSavedPlan = (plan) => {
+    if (!plan) return;
+    const cat = plan.business_category || 'Grocery';
+    const loc = plan.location || 'Kallupatti Village, Madurai';
+    const inv = Number(plan.investment_amount) || 250000;
+
+    // Update global idea data
+    setIdeaData((prev) => ({
+      ...prev,
+      category: cat,
+      location: loc,
+      investment: inv,
+      availableCapital: inv,
+    }));
+
+    // Update Advisory
+    if (plan.advisory_data) {
+      setAdvisory(plan.advisory_data);
+    }
+
+    // Update Financials
+    if (plan.financial_data) {
+      setFinancials(plan.financial_data);
+    }
+
+    // Update Schemes
+    if (plan.schemes && plan.schemes.length > 0) {
+      setRecommendedSchemes(plan.schemes);
+    }
+
+    // Sync analysis scorecard
+    const baseResult = generateLocalAnalysis(loc, cat, inv);
+    setAnalysisResult({
+      ...baseResult,
+      viabilityScore: plan.viability_score || baseResult.viabilityScore,
+      advisory: plan.advisory_data || null,
+      financials: plan.financial_data || null,
+      recommendedSchemes: plan.schemes || [],
+      backendLive: true,
+      savedPlanId: plan.id,
+      savedDate: plan.date,
+    });
+  };
+
+  /**
+   * Saves the current active business plan to the backend /api/my-plans
+   */
+  const saveCurrentPlan = async () => {
+    try {
+      const payload = {
+        business_category: ideaData.category,
+        location: ideaData.location,
+        investment_amount: Number(ideaData.investment) || 250000,
+        status: 'Verified DPR',
+        viability_score: analysisResult?.viabilityScore || 94,
+        advisory_data: advisory || null,
+        financial_data: financials || null,
+        schemes: recommendedSchemes || []
+      };
+      const saved = await saveBusinessPlan(payload);
+      return saved;
+    } catch (err) {
+      console.warn('saveCurrentPlan error:', err);
+      throw err;
+    }
+  };
+
   return (
     <BusinessIdeaContext.Provider
       value={{
@@ -466,8 +537,11 @@ export function BusinessIdeaProvider({ children }) {
         recommendedSchemes,
         triggerAnalysis,
         calculateFinanceLive,
+        loadSavedPlan,
+        saveCurrentPlan,
         categoryOptions: Object.keys(CATEGORY_DETAILS),
-        categoryDetailsMap: CATEGORY_DETAILS
+        categoryDetailsMap: CATEGORY_DETAILS,
+        lang
       }}
     >
       {children}

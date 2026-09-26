@@ -12,10 +12,12 @@ import {
   FileBadge,
   LogOut,
   HelpCircle,
-  ExternalLink
+  ExternalLink,
+  LogIn
 } from 'lucide-react';
 import { mockData } from '../data/mockData';
 import { useBusinessIdea } from '../context/BusinessIdeaContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function TopNavbar({ 
   lang, 
@@ -27,6 +29,7 @@ export default function TopNavbar({
   activeTabTitle 
 }) {
   const { ideaData } = useBusinessIdea();
+  const { user, isAuthenticated, logout, openLogin } = useAuth();
   const [searchQuery, setSearchQuery] = useState('');
   const [unreadCount, setUnreadCount] = useState(2);
 
@@ -170,78 +173,96 @@ export default function TopNavbar({
           </div>
         </div>
 
-        {/* User Profile Placeholder Dropdown */}
-        <div className="dropdown dropdown-end">
-          <div 
-            tabIndex={0} 
-            role="button" 
-            className="flex items-center gap-2 p-1 pl-1.5 sm:pr-2.5 rounded-full hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition-colors"
-            aria-label="User Profile Menu"
+        {/* User Profile / Auth Button */}
+        {!isAuthenticated ? (
+          <button
+            onClick={openLogin}
+            className="flex items-center gap-1.5 py-1.5 px-3 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs shadow-xs transition-all"
+            aria-label="Sign In or Register"
           >
-            {/* Avatar Placeholder with Status Dot */}
-            <div className="relative">
-              <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 text-white font-bold text-xs flex items-center justify-center shadow-xs">
-                SK
+            <LogIn className="w-4 h-4" />
+            <span className="hidden sm:inline">{lang === 'ta' ? 'உள்நுழைக' : 'Sign In'}</span>
+          </button>
+        ) : (
+          <div className="dropdown dropdown-end">
+            <div 
+              tabIndex={0} 
+              role="button" 
+              className="flex items-center gap-2 p-1 pl-1.5 sm:pr-2.5 rounded-full hover:bg-slate-100 border border-slate-200/80 cursor-pointer transition-colors"
+              aria-label="User Profile Menu"
+            >
+              {/* Avatar Placeholder with Status Dot */}
+              <div className="relative">
+                <div className="w-8 h-8 rounded-full bg-gradient-to-tr from-emerald-600 to-sky-600 text-white font-black text-xs flex items-center justify-center shadow-xs">
+                  {user?.full_name ? user.full_name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : 'SK'}
+                </div>
+                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
               </div>
-              <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
-            </div>
 
-            {/* User Name & Role (hidden on small mobile) */}
-            <div className="hidden xl:flex flex-col text-left pr-1">
-              <span className="text-xs font-bold text-slate-800 leading-tight">
-                {t.topbar.profileName}
-              </span>
-              <span className="text-[10px] text-emerald-700 font-semibold leading-none">
-                {t.topbar.profileRole}
-              </span>
-            </div>
-
-            <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
-          </div>
-
-          {/* Profile Menu Dropdown Card */}
-          <ul 
-            tabIndex={0} 
-            className="dropdown-content z-50 menu p-2 shadow-xl bg-white rounded-2xl w-64 border border-slate-100 mt-2 text-xs"
-          >
-            {/* User Summary Header */}
-            <li className="border-b border-slate-100 pb-2 mb-1">
-              <div className="flex flex-col items-start hover:bg-transparent cursor-default px-2 py-1">
-                <span className="font-bold text-slate-900 text-sm">{t.topbar.profileName}</span>
-                <span className="text-[11px] text-slate-500">{t.topbar.profileRole}</span>
-                <span className="mt-1 text-[10px] inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                  <MapPin className="w-3 h-3" /> Madurai, Tamil Nadu
+              {/* User Name & Role (hidden on small mobile) */}
+              <div className="hidden xl:flex flex-col text-left pr-1">
+                <span className="text-xs font-bold text-slate-800 leading-tight">
+                  {user?.full_name || t.topbar.profileName}
+                </span>
+                <span className="text-[10px] text-emerald-700 font-semibold leading-none">
+                  {user?.role || t.topbar.profileRole}
                 </span>
               </div>
-            </li>
 
-            <li>
-              <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
-                <User className="w-4 h-4 text-emerald-600" />
-                <span>{t.topbar.viewProfile}</span>
-              </a>
-            </li>
-            <li>
-              <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
-                <FileBadge className="w-4 h-4 text-sky-600" />
-                <span>{t.topbar.governmentSchemes}</span>
-                <span className="badge badge-xs badge-success text-white ml-auto">3 Active</span>
-              </a>
-            </li>
-            <li>
-              <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
-                <Building2 className="w-4 h-4 text-amber-600" />
-                <span>DIC Madurai / MSME Center</span>
-              </a>
-            </li>
-            <li className="border-t border-slate-100 pt-1 mt-1">
-              <a className="flex items-center gap-2 py-2 text-red-600 hover:bg-red-50 rounded-lg font-semibold">
-                <LogOut className="w-4 h-4 text-red-500" />
-                <span>{t.topbar.logout}</span>
-              </a>
-            </li>
-          </ul>
-        </div>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400 hidden sm:block" />
+            </div>
+
+            {/* Profile Menu Dropdown Card */}
+            <ul 
+              tabIndex={0} 
+              className="dropdown-content z-50 menu p-2 shadow-xl bg-white rounded-2xl w-64 border border-slate-100 mt-2 text-xs"
+            >
+              {/* User Summary Header */}
+              <li className="border-b border-slate-100 pb-2 mb-1">
+                <div className="flex flex-col items-start hover:bg-transparent cursor-default px-2 py-1">
+                  <span className="font-bold text-slate-900 text-sm">
+                    {user?.full_name || t.topbar.profileName}
+                  </span>
+                  <span className="text-[11px] text-slate-500">
+                    {user?.email || 'selvaraj@grambiz.ai'}
+                  </span>
+                  <span className="mt-1 text-[10px] inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                    <MapPin className="w-3 h-3" /> {user?.location || 'Madurai, Tamil Nadu'}
+                  </span>
+                </div>
+              </li>
+
+              <li>
+                <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
+                  <User className="w-4 h-4 text-emerald-600" />
+                  <span>{t.topbar.viewProfile}</span>
+                </a>
+              </li>
+              <li>
+                <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
+                  <FileBadge className="w-4 h-4 text-sky-600" />
+                  <span>{t.topbar.governmentSchemes}</span>
+                  <span className="badge badge-xs badge-success text-white ml-auto">3 Active</span>
+                </a>
+              </li>
+              <li>
+                <a className="flex items-center gap-2 py-2 text-slate-700 hover:text-emerald-700 hover:bg-emerald-50 rounded-lg">
+                  <Building2 className="w-4 h-4 text-amber-600" />
+                  <span>DIC Madurai / MSME Center</span>
+                </a>
+              </li>
+              <li className="border-t border-slate-100 pt-1 mt-1">
+                <button 
+                  onClick={logout}
+                  className="flex items-center gap-2 py-2 text-red-600 hover:bg-red-50 rounded-lg font-semibold w-full text-left"
+                >
+                  <LogOut className="w-4 h-4 text-red-500" />
+                  <span>{t.topbar.logout}</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        )}
       </div>
     </header>
   );

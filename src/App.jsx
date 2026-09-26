@@ -8,6 +8,9 @@ import CalculatorView from './components/views/CalculatorView';
 import ReportsView from './components/views/ReportsView';
 import AdvisoryView from './components/views/AdvisoryView';
 import VoiceAssistant from './components/voice/VoiceAssistant';
+import AuthModal from './components/auth/AuthModal';
+import { BusinessIdeaProvider } from './context/BusinessIdeaContext';
+import { AuthProvider } from './context/AuthContext';
 import { translations } from './data/translations';
 import { Sprout, PhoneCall, ShieldCheck, Heart } from 'lucide-react';
 
@@ -32,7 +35,9 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col font-sans selection:bg-emerald-600 selection:text-white" data-theme="ruralTrust">
+    <AuthProvider>
+      <BusinessIdeaProvider lang={lang}>
+        <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col font-sans selection:bg-emerald-600 selection:text-white" data-theme="ruralTrust">
       {/* Responsive Collapsible Sidebar */}
       <Sidebar
         activeTab={activeTab}
@@ -113,6 +118,11 @@ export default function App() {
 
       {/* Persistent Global Voice Assistant (FAB + Animated Listening Visualizer Modal) */}
       <VoiceAssistant lang={lang} t={t} />
+
+      {/* Global Authentication Modal (Login / Register) */}
+      <AuthModal lang={lang} t={t} />
     </div>
+    </BusinessIdeaProvider>
+    </AuthProvider>
   );
 }
