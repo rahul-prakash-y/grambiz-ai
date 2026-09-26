@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 from pathlib import Path
 import re
 from typing import List, Optional
@@ -9,8 +10,18 @@ import jwt
 from deep_translator import GoogleTranslator
 import requests
 from dotenv import load_dotenv
-from fastapi import FastAPI, HTTPException, Header
+
+# Ensure backend directory is in sys.path
+_BACKEND_DIR = Path(__file__).resolve().parent
+if str(_BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(_BACKEND_DIR))
+
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.orm import Session
+import database
+import models
+from database import engine, get_db, SessionLocal
 from schemas import (
     BusinessAnalysisRequest,
     FinancialCalcRequest,
@@ -774,194 +785,250 @@ def analyze_business(payload: BusinessAnalysisRequest):
     return response_data
 
 
-# ─── Authentication & Saved Plans State ───
+# ─── Authentication, Database Models & Persistence ───
 JWT_SECRET = os.getenv("JWT_SECRET", "grambiz_rural_ai_secret_key_2026")
 JWT_ALGORITHM = "HS256"
 
-DEFAULT_USER = {
-    "id": "usr-selvaraj-001",
-    "email": "selvaraj@grambiz.ai",
-    "password": "password123",
-    "full_name": "Selvaraj Kumar",
-    "role": "Agri-Enterprise Owner",
-    "location": "Kallupatti Village, Madurai"
-}
+# Password hashing utilities using PBKDF2-HMAC-SHA256
+import hashlib
+import secrets
 
-USERS_STORE: dict[str, dict] = {
-    DEFAULT_USER["email"]: DEFAULT_USER
-}
+def hash_password(password: str) -> str:
+    """Hash password using PBKDF2-HMAC-SHA256 with a unique salt."""
+    salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return f"{salt}${dk.hex()}"
 
-INITIAL_PLANS = [
-    {
-        "id": "plan-dairy-001",
-        "user_email": "selvaraj@grambiz.ai",
-        "business_category": "Dairy",
-        "location": "Kallupatti Village, Madurai",
-        "investment_amount": 350000.0,
-        "status": "Verified DPR",
-        "viability_score": 96,
-        "date": "2026-09-18",
-        "advisory_data": {
-            "market_insights": [
-                "High daily household consumption of fresh milk and curd across Kallupatti Panchayat cluster.",
-                "Regional milk chilling center within 6km provides guaranteed daily procurement buyback.",
-                "Direct production of value-added paneer and ghee offers 35% higher profit margins."
-            ],
-            "swot_analysis": {
-                "strengths": [
-                    "Low land lease cost and green fodder availability near water canal",
-                    "Predictable twice-daily cash collections from milk delivery"
-                ],
-                "weaknesses": [
-                    "High initial capital outlay required for high-yield crossbred milch animals",
-                    "Routine hygiene maintenance required for automated milking units"
-                ],
-                "opportunities": [
-                    "Eligible for 33.3% capital subsidy under NABARD Dairy Entrepreneurship Scheme",
-                    "Direct supply contracts with local tea stalls and sweet shops"
-                ],
-                "threats": [
-                    "Seasonal dry cattle feed and mineral supplement price volatility",
-                    "Risk of bovine illness during unseasonal monsoon changes"
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against stored hashed password."""
+    if not hashed_password:
+        return False
+    if "$" not in hashed_password:
+        return hashlib.sha256(plain_password.encode("utf-8")).hexdigest() == hashed_password or plain_password == hashed_password
+    try:
+        salt, hash_val = hashed_password.split("$", 1)
+        computed = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), salt.encode("utf-8"), 100000).hex()
+        return secrets.compare_digest(computed, hash_val)
+    except Exception:
+        return False
+
+# Initialize PostgreSQL tables
+models.Base.metadata.create_all(bind=engine)
+
+def seed_default_data():
+    """Ensure default demo account and sample DPRs exist in PostgreSQL database."""
+    try:
+        with SessionLocal() as db:
+            default_user = db.query(models.User).filter(models.User.email == "selvaraj@grambiz.ai").first()
+            if not default_user:
+                default_user = models.User(
+                    email="selvaraj@grambiz.ai",
+                    hashed_password=hash_password("password123"),
+                    full_name="Selvaraj Kumar",
+                    role="Agri-Enterprise Owner",
+                    location="Kallupatti Village, Madurai"
+                )
+                db.add(default_user)
+                db.commit()
+                db.refresh(default_user)
+
+                initial_plans = [
+                    {
+                        "business_category": "Dairy",
+                        "location": "Kallupatti Village, Madurai",
+                        "investment": 350000,
+                        "status": "Verified DPR",
+                        "viability_score": 96,
+                        "full_json_report": {
+                            "business_category": "Dairy",
+                            "location": "Kallupatti Village, Madurai",
+                            "investment_amount": 350000.0,
+                            "status": "Verified DPR",
+                            "viability_score": 96,
+                            "advisory_data": {
+                                "market_insights": [
+                                    "High daily household consumption of fresh milk and curd across Kallupatti Panchayat cluster.",
+                                    "Regional milk chilling center within 6km provides guaranteed daily procurement buyback.",
+                                    "Direct production of value-added paneer and ghee offers 35% higher profit margins."
+                                ],
+                                "swot_analysis": {
+                                    "strengths": [
+                                        "Low land lease cost and green fodder availability near water canal",
+                                        "Predictable twice-daily cash collections from milk delivery"
+                                    ],
+                                    "weaknesses": [
+                                        "High initial capital outlay required for high-yield crossbred milch animals",
+                                        "Routine hygiene maintenance required for automated milking units"
+                                    ],
+                                    "opportunities": [
+                                        "Eligible for 33.3% capital subsidy under NABARD Dairy Entrepreneurship Scheme",
+                                        "Direct supply contracts with local tea stalls and sweet shops"
+                                    ],
+                                    "threats": [
+                                        "Seasonal dry cattle feed and mineral supplement price volatility",
+                                        "Risk of bovine illness during unseasonal monsoon changes"
+                                    ]
+                                },
+                                "risks": [
+                                    "Dry fodder price spikes over summer peak impacting operating margins",
+                                    "Unplanned herd illness reducing daily milk yield below breakeven threshold"
+                                ]
+                            },
+                            "financial_data": {
+                                "project_cost": 480000.0,
+                                "available_capital": 350000.0,
+                                "funding_gap": 130000.0,
+                                "interest_rate_percent": 8.5,
+                                "tenure_months": 48,
+                                "monthly_emi": 3206.0,
+                                "total_interest": 23888.0,
+                                "total_payable": 153888.0,
+                                "business_category": "Dairy"
+                            }
+                        }
+                    },
+                    {
+                        "business_category": "Grocery",
+                        "location": "Usilampatti Taluk, Madurai",
+                        "investment": 250000,
+                        "status": "Bank Ready",
+                        "viability_score": 94,
+                        "full_json_report": {
+                            "business_category": "Grocery",
+                            "location": "Usilampatti Taluk, Madurai",
+                            "investment_amount": 250000.0,
+                            "status": "Bank Ready",
+                            "viability_score": 94,
+                            "advisory_data": {
+                                "market_insights": [
+                                    "Surrounding catchment of 4 hamlets lacks a branded cold-storage provision shop.",
+                                    "High turnover demand for daily essential pulses, millets, and hygienic spice packaging.",
+                                    "Direct farm-gate sourcing from Kallupatti farmers reduces wholesale purchasing cost by 18%."
+                                ],
+                                "swot_analysis": {
+                                    "strengths": [
+                                        "Central junction shop location with heavy agricultural laborer footfall",
+                                        "Fast inventory turns on daily staples and cooking essentials"
+                                    ],
+                                    "weaknesses": [
+                                        "Credit (Udhaar) demands from neighborhood requiring strict digital ledger discipline",
+                                        "Perishable stock management requires commercial deep freezer"
+                                    ],
+                                    "opportunities": [
+                                        "Eligible for collateral-free MUDRA Kishore loan up to ₹5,00,000",
+                                        "Tie-ups with local women SHGs for homemade pickles and papads"
+                                    ],
+                                    "threats": [
+                                        "Wholesale FMCG distributor delayed deliveries during festive rush",
+                                        "Local competition on loose commodity price discounting"
+                                    ]
+                                },
+                                "risks": [
+                                    "Excessive uncollected customer credit locking working capital",
+                                    "Monsoon humidity causing inventory spoilage if storage isn't sealed"
+                                ]
+                            },
+                            "financial_data": {
+                                "project_cost": 320000.0,
+                                "available_capital": 250000.0,
+                                "funding_gap": 70000.0,
+                                "interest_rate_percent": 8.5,
+                                "tenure_months": 36,
+                                "monthly_emi": 2209.0,
+                                "total_interest": 9524.0,
+                                "total_payable": 79524.0,
+                                "business_category": "Grocery"
+                            }
+                        }
+                    },
+                    {
+                        "business_category": "Tailoring",
+                        "location": "Sedapatti Village, Madurai",
+                        "investment": 180000,
+                        "status": "PMEGP Approved",
+                        "viability_score": 91,
+                        "full_json_report": {
+                            "business_category": "Tailoring",
+                            "location": "Sedapatti Village, Madurai",
+                            "investment_amount": 180000.0,
+                            "status": "PMEGP Approved",
+                            "viability_score": 91,
+                            "advisory_data": {
+                                "market_insights": [
+                                    "High regional seasonal demand for festival attire, blouse embroidery, and school uniforms.",
+                                    "Absence of modern 4-thread overlock and computerized embroidery within 8km radius.",
+                                    "Substantial cost advantage operating from owned village property with low power tariffs."
+                                ],
+                                "swot_analysis": {
+                                    "strengths": [
+                                        "High gross profit margin (40% - 50%) on custom stitching and embroidery",
+                                        "Minimal raw material wastage and low working capital overhead"
+                                    ],
+                                    "weaknesses": [
+                                        "Dependent on skilled machine operators during festival rush periods",
+                                        "Seasonal peaks require advance production scheduling"
+                                    ],
+                                    "opportunities": [
+                                        "35% margin money grant under PMEGP Rural Women/General Scheme",
+                                        "Annual uniform supply contracts with 3 matriculation schools in taluk"
+                                    ],
+                                    "threats": [
+                                        "Unscheduled power interruptions requiring battery inverter backup",
+                                        "Readymade discount apparel stores opening in nearby towns"
+                                    ]
+                                },
+                                "risks": [
+                                    "Delayed delivery penalties on bulk school uniform contracts",
+                                    "Power backup failure stalling high-speed motorized machines"
+                                ]
+                            },
+                            "financial_data": {
+                                "project_cost": 240000.0,
+                                "available_capital": 180000.0,
+                                "funding_gap": 60000.0,
+                                "interest_rate_percent": 8.5,
+                                "tenure_months": 24,
+                                "monthly_emi": 2727.0,
+                                "total_interest": 5448.0,
+                                "total_payable": 65448.0,
+                                "business_category": "Tailoring"
+                            }
+                        }
+                    }
                 ]
-            },
-            "risks": [
-                "Dry fodder price spikes over summer peak impacting operating margins",
-                "Unplanned herd illness reducing daily milk yield below breakeven threshold"
-            ]
-        },
-        "financial_data": {
-            "project_cost": 480000.0,
-            "available_capital": 350000.0,
-            "funding_gap": 130000.0,
-            "interest_rate_percent": 8.5,
-            "tenure_months": 48,
-            "monthly_emi": 3206.0,
-            "total_interest": 23888.0,
-            "total_payable": 153888.0,
-            "business_category": "Dairy"
-        }
-    },
-    {
-        "id": "plan-grocery-002",
-        "user_email": "selvaraj@grambiz.ai",
-        "business_category": "Grocery",
-        "location": "Usilampatti Taluk, Madurai",
-        "investment_amount": 250000.0,
-        "status": "Bank Ready",
-        "viability_score": 94,
-        "date": "2026-09-22",
-        "advisory_data": {
-            "market_insights": [
-                "Surrounding catchment of 4 hamlets lacks a branded cold-storage provision shop.",
-                "High turnover demand for daily essential pulses, millets, and hygienic spice packaging.",
-                "Direct farm-gate sourcing from Kallupatti farmers reduces wholesale purchasing cost by 18%."
-            ],
-            "swot_analysis": {
-                "strengths": [
-                    "Central junction shop location with heavy agricultural laborer footfall",
-                    "Fast inventory turns on daily staples and cooking essentials"
-                ],
-                "weaknesses": [
-                    "Credit (Udhaar) demands from neighborhood requiring strict digital ledger discipline",
-                    "Perishable stock management requires commercial deep freezer"
-                ],
-                "opportunities": [
-                    "Eligible for collateral-free MUDRA Kishore loan up to ₹5,00,000",
-                    "Tie-ups with local women SHGs for homemade pickles and papads"
-                ],
-                "threats": [
-                    "Wholesale FMCG distributor delayed deliveries during festive rush",
-                    "Local competition on loose commodity price discounting"
-                ]
-            },
-            "risks": [
-                "Excessive uncollected customer credit locking working capital",
-                "Monsoon humidity causing inventory spoilage if storage isn't sealed"
-            ]
-        },
-        "financial_data": {
-            "project_cost": 320000.0,
-            "available_capital": 250000.0,
-            "funding_gap": 70000.0,
-            "interest_rate_percent": 8.5,
-            "tenure_months": 36,
-            "monthly_emi": 2209.0,
-            "total_interest": 9524.0,
-            "total_payable": 79524.0,
-            "business_category": "Grocery"
-        }
-    },
-    {
-        "id": "plan-tailoring-003",
-        "user_email": "selvaraj@grambiz.ai",
-        "business_category": "Tailoring",
-        "location": "Sedapatti Village, Madurai",
-        "investment_amount": 180000.0,
-        "status": "PMEGP Approved",
-        "viability_score": 91,
-        "date": "2026-09-25",
-        "advisory_data": {
-            "market_insights": [
-                "High regional seasonal demand for festival attire, blouse embroidery, and school uniforms.",
-                "Absence of modern 4-thread overlock and computerized embroidery within 8km radius.",
-                "Substantial cost advantage operating from owned village property with low power tariffs."
-            ],
-            "swot_analysis": {
-                "strengths": [
-                    "High gross profit margin (40% - 50%) on custom stitching and embroidery",
-                    "Minimal raw material wastage and low working capital overhead"
-                ],
-                "weaknesses": [
-                    "Dependent on skilled machine operators during festival rush periods",
-                    "Seasonal peaks require advance production scheduling"
-                ],
-                "opportunities": [
-                    "35% margin money grant under PMEGP Rural Women/General Scheme",
-                    "Annual uniform supply contracts with 3 matriculation schools in taluk"
-                ],
-                "threats": [
-                    "Unscheduled power interruptions requiring battery inverter backup",
-                    "Readymade discount apparel stores opening in nearby towns"
-                ]
-            },
-            "risks": [
-                "Delayed delivery penalties on bulk school uniform contracts",
-                "Power backup failure stalling high-speed motorized machines"
-            ]
-        },
-        "financial_data": {
-            "project_cost": 240000.0,
-            "available_capital": 180000.0,
-            "funding_gap": 60000.0,
-            "interest_rate_percent": 8.5,
-            "tenure_months": 24,
-            "monthly_emi": 2727.0,
-            "total_interest": 5448.0,
-            "total_payable": 65448.0,
-            "business_category": "Tailoring"
-        }
-    }
-]
+                for p in initial_plans:
+                    bp = models.BusinessPlan(
+                        user_id=default_user.id,
+                        business_category=p["business_category"],
+                        location=p["location"],
+                        investment=p["investment"],
+                        status=p["status"],
+                        viability_score=p["viability_score"],
+                        full_json_report=p["full_json_report"]
+                    )
+                    db.add(bp)
+                db.commit()
+    except Exception as e:
+        print(f"[GramBiz DB] Seed default data warning: {e}")
 
-PLANS_STORE: list[dict] = list(INITIAL_PLANS)
+# Run initial seed check
+seed_default_data()
 
-
-def create_access_token(user: dict) -> str:
+def create_access_token(user_id: int, email: str, full_name: str = "", role: str = "", location: str = "") -> str:
     """Generates a signed JWT access token valid for 7 days."""
     payload = {
-        "sub": user["email"],
-        "user_id": user["id"],
-        "full_name": user["full_name"],
-        "role": user.get("role", "Agri-Enterprise Owner"),
-        "location": user.get("location", "Madurai, Tamil Nadu"),
+        "sub": email,
+        "user_id": str(user_id),
+        "full_name": full_name or email.split("@")[0],
+        "role": role or "Agri-Enterprise Owner",
+        "location": location or "Madurai, Tamil Nadu",
         "exp": datetime.now(timezone.utc) + timedelta(days=7)
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
-def get_current_user_from_header(authorization: Optional[str] = Header(None)) -> Optional[dict]:
-    """Extracts and verifies JWT from Authorization: Bearer <token> header."""
+def get_current_user_from_header(authorization: Optional[str] = Header(None), db: Session = Depends(get_db)) -> Optional[models.User]:
+    """Extracts and verifies JWT from Authorization header and queries the PostgreSQL database."""
     if not authorization:
         return None
     try:
@@ -972,16 +1039,8 @@ def get_current_user_from_header(authorization: Optional[str] = Header(None)) ->
             token = authorization.strip()
         decoded = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         email = decoded.get("sub")
-        if email and email in USERS_STORE:
-            return USERS_STORE[email]
-        elif email:
-            return {
-                "id": decoded.get("user_id", f"usr-{uuid.uuid4().hex[:8]}"),
-                "email": email,
-                "full_name": decoded.get("full_name", email.split("@")[0]),
-                "role": decoded.get("role", "Agri-Enterprise Owner"),
-                "location": decoded.get("location", "Madurai, Tamil Nadu")
-            }
+        if email:
+            return db.query(models.User).filter(models.User.email == email).first()
         return None
     except Exception:
         return None
@@ -989,134 +1048,254 @@ def get_current_user_from_header(authorization: Optional[str] = Header(None)) ->
 
 @app.post("/api/auth/register", response_model=TokenResponse)
 @app.post("/api/register", response_model=TokenResponse)
-def register_user(payload: UserRegisterRequest):
-    """Register a new user and return JWT access token."""
+def register_user(payload: UserRegisterRequest, db: Session = Depends(get_db)):
+    """Register a new user, hash password, insert into PostgreSQL DB, and return JWT."""
     email = payload.email.strip().lower()
-    if email in USERS_STORE:
+    existing_user = db.query(models.User).filter(models.User.email == email).first()
+    if existing_user:
         raise HTTPException(status_code=400, detail="An account with this email already exists. Please sign in.")
 
-    new_user = {
-        "id": f"usr-{uuid.uuid4().hex[:8]}",
-        "email": email,
-        "password": payload.password,
-        "full_name": payload.full_name.strip(),
-        "role": "Agri-Enterprise Owner",
-        "location": payload.location.strip() if payload.location else "Madurai, Tamil Nadu"
-    }
-    USERS_STORE[email] = new_user
-    token = create_access_token(new_user)
+    new_user = models.User(
+        email=email,
+        hashed_password=hash_password(payload.password),
+        full_name=payload.full_name.strip() if payload.full_name else email.split("@")[0],
+        role="Agri-Enterprise Owner",
+        location=payload.location.strip() if payload.location else "Madurai, Tamil Nadu"
+    )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
+
+    token = create_access_token(
+        user_id=new_user.id,
+        email=new_user.email,
+        full_name=new_user.full_name,
+        role=new_user.role,
+        location=new_user.location
+    )
 
     return {
         "access_token": token,
         "token_type": "bearer",
         "user": {
-            "id": new_user["id"],
-            "email": new_user["email"],
-            "full_name": new_user["full_name"],
-            "role": new_user["role"],
-            "location": new_user["location"]
+            "id": str(new_user.id),
+            "email": new_user.email,
+            "full_name": new_user.full_name or "Entrepreneur",
+            "role": new_user.role or "Agri-Enterprise Owner",
+            "location": new_user.location or "Madurai, Tamil Nadu"
         }
     }
 
 
 @app.post("/api/auth/login", response_model=TokenResponse)
 @app.post("/api/login", response_model=TokenResponse)
-def login_user(payload: UserLoginRequest):
-    """Authenticate existing user or demo account and return JWT access token."""
+def login_user(payload: UserLoginRequest, db: Session = Depends(get_db)):
+    """Authenticate existing user against PostgreSQL DB and return JWT access token."""
     email = payload.email.strip().lower()
-    user = USERS_STORE.get(email)
+    user = db.query(models.User).filter(models.User.email == email).first()
 
-    if not user or user.get("password") != payload.password:
-        if email in ["selvaraj@grambiz.ai", "demo@grambiz.ai", "admin@grambiz.ai"]:
-            user = DEFAULT_USER
+    if not user or not verify_password(payload.password, user.hashed_password):
+        # Demo account fallback/seed
+        if email in ["selvaraj@grambiz.ai", "demo@grambiz.ai", "admin@grambiz.ai"] and payload.password == "password123":
+            user = models.User(
+                email=email,
+                hashed_password=hash_password(payload.password),
+                full_name="Selvaraj Kumar" if email == "selvaraj@grambiz.ai" else "GramBiz Demo Owner",
+                role="Agri-Enterprise Owner",
+                location="Kallupatti Village, Madurai"
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
         else:
             raise HTTPException(status_code=401, detail="Invalid email or password.")
 
-    token = create_access_token(user)
+    token = create_access_token(
+        user_id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        location=user.location
+    )
     return {
         "access_token": token,
         "token_type": "bearer",
         "user": {
-            "id": user["id"],
-            "email": user["email"],
-            "full_name": user["full_name"],
-            "role": user.get("role", "Agri-Enterprise Owner"),
-            "location": user.get("location", "Madurai, Tamil Nadu")
+            "id": str(user.id),
+            "email": user.email,
+            "full_name": user.full_name or "Entrepreneur",
+            "role": user.role or "Agri-Enterprise Owner",
+            "location": user.location or "Madurai, Tamil Nadu"
         }
     }
 
 
 @app.get("/api/auth/me", response_model=UserProfile)
-def get_current_user_profile(authorization: Optional[str] = Header(None)):
-    """Retrieve profile of the currently authenticated user."""
-    user = get_current_user_from_header(authorization)
+def get_current_user_profile(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Retrieve profile of the currently authenticated user from PostgreSQL."""
+    user = get_current_user_from_header(authorization, db)
     if not user:
-        user = DEFAULT_USER
+        user = db.query(models.User).filter(models.User.email == "selvaraj@grambiz.ai").first()
+        if not user:
+            user = db.query(models.User).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User not authenticated.")
+
     return {
-        "id": user["id"],
-        "email": user["email"],
-        "full_name": user["full_name"],
-        "role": user.get("role", "Agri-Enterprise Owner"),
-        "location": user.get("location", "Madurai, Tamil Nadu")
+        "id": str(user.id),
+        "email": user.email,
+        "full_name": user.full_name or "Entrepreneur",
+        "role": user.role or "Agri-Enterprise Owner",
+        "location": user.location or "Madurai, Tamil Nadu"
     }
 
 
-@app.get("/api/my-plans", response_model=List[SavedPlanResponse])
-def get_my_plans(authorization: Optional[str] = Header(None)):
+@app.post("/api/save-plan")
+@app.post("/api/my-plans")
+def save_business_plan(
+    payload: dict,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
     """
-    Fetch all previously saved business plans for the logged-in user.
-    If authenticated via Bearer token, filters plans by user email.
+    Save the received business plan JSON and details into the BusinessPlan table
+    linked to the user in PostgreSQL.
     """
-    user = get_current_user_from_header(authorization)
-    user_email = user["email"] if user else DEFAULT_USER["email"]
+    user = get_current_user_from_header(authorization, db)
+    if not user:
+        user = db.query(models.User).filter(models.User.email == "selvaraj@grambiz.ai").first()
+        if not user:
+            user = db.query(models.User).first()
+            if not user:
+                user = models.User(
+                    email="selvaraj@grambiz.ai",
+                    hashed_password=hash_password("password123"),
+                    full_name="Selvaraj Kumar",
+                    role="Agri-Enterprise Owner",
+                    location="Kallupatti Village, Madurai"
+                )
+                db.add(user)
+                db.commit()
+                db.refresh(user)
 
-    user_plans = [p for p in PLANS_STORE if p.get("user_email") == user_email]
+    category = payload.get("business_category") or payload.get("category") or "Agriculture"
+    location = payload.get("location") or "Madurai, Tamil Nadu"
+    investment_raw = payload.get("investment") or payload.get("investment_amount") or 0
+    try:
+        investment_val = int(float(investment_raw))
+    except (ValueError, TypeError):
+        investment_val = 0
 
-    # Pre-seed initial sample plans for fresh accounts
-    if not user_plans:
-        user_plans = [
-            {**p, "user_email": user_email, "id": f"{p['id']}-{user_email[:4]}"}
-            for p in INITIAL_PLANS
-        ]
-        PLANS_STORE.extend(user_plans)
+    status_val = payload.get("status") or "Verified DPR"
+    viability_score_raw = payload.get("viability_score") or 92
+    try:
+        viability_score_val = int(viability_score_raw)
+    except (ValueError, TypeError):
+        viability_score_val = 92
 
-    return user_plans
+    full_json_report = payload.get("full_json_report")
+    if not full_json_report:
+        full_json_report = {
+            "business_category": category,
+            "location": location,
+            "investment_amount": float(investment_val),
+            "status": status_val,
+            "viability_score": viability_score_val,
+            "advisory_data": payload.get("advisory_data"),
+            "financial_data": payload.get("financial_data"),
+            "schemes": payload.get("schemes") or []
+        }
 
+    new_plan = models.BusinessPlan(
+        user_id=user.id,
+        business_category=category,
+        location=location,
+        investment=investment_val,
+        status=status_val,
+        viability_score=viability_score_val,
+        full_json_report=full_json_report
+    )
+    db.add(new_plan)
+    db.commit()
+    db.refresh(new_plan)
 
-@app.post("/api/my-plans", response_model=SavedPlanResponse)
-def save_my_plan(payload: SavedPlanCreateRequest, authorization: Optional[str] = Header(None)):
-    """Save a new business plan for the logged-in user."""
-    user = get_current_user_from_header(authorization)
-    user_email = user["email"] if user else DEFAULT_USER["email"]
-
-    new_plan = {
-        "id": f"plan-{uuid.uuid4().hex[:8]}",
-        "user_email": user_email,
-        "business_category": payload.business_category,
-        "location": payload.location,
-        "investment_amount": payload.investment_amount,
-        "status": payload.status or "Verified DPR",
-        "viability_score": payload.viability_score or 92,
-        "date": datetime.now().strftime("%Y-%m-%d"),
-        "advisory_data": payload.advisory_data,
-        "financial_data": payload.financial_data,
-        "schemes": payload.schemes or []
+    return {
+        "id": f"plan-{new_plan.id}",
+        "user_email": user.email,
+        "business_category": new_plan.business_category,
+        "location": new_plan.location,
+        "investment_amount": float(new_plan.investment),
+        "status": new_plan.status or "Verified DPR",
+        "viability_score": new_plan.viability_score or 92,
+        "date": new_plan.created_at.strftime("%Y-%m-%d") if new_plan.created_at else datetime.now().strftime("%Y-%m-%d"),
+        "advisory_data": new_plan.full_json_report.get("advisory_data") if isinstance(new_plan.full_json_report, dict) else None,
+        "financial_data": new_plan.full_json_report.get("financial_data") if isinstance(new_plan.full_json_report, dict) else None,
+        "schemes": new_plan.full_json_report.get("schemes") if isinstance(new_plan.full_json_report, dict) else [],
+        "full_json_report": new_plan.full_json_report,
     }
-    PLANS_STORE.insert(0, new_plan)
-    return new_plan
+
+
+@app.get("/api/my-plans")
+def get_my_plans(
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Fetch all plans for the authenticated user from the PostgreSQL database."""
+    user = get_current_user_from_header(authorization, db)
+    if not user:
+        user = db.query(models.User).filter(models.User.email == "selvaraj@grambiz.ai").first()
+        if not user:
+            user = db.query(models.User).first()
+
+    if not user:
+        return []
+
+    plans = db.query(models.BusinessPlan).filter(models.BusinessPlan.user_id == user.id).order_by(models.BusinessPlan.created_at.desc()).all()
+
+    return [
+        {
+            "id": f"plan-{p.id}",
+            "user_email": user.email,
+            "business_category": p.business_category,
+            "location": p.location,
+            "investment_amount": float(p.investment),
+            "status": p.status or "Verified DPR",
+            "viability_score": p.viability_score or 92,
+            "date": p.created_at.strftime("%Y-%m-%d") if p.created_at else datetime.now().strftime("%Y-%m-%d"),
+            "advisory_data": p.full_json_report.get("advisory_data") if isinstance(p.full_json_report, dict) else None,
+            "financial_data": p.full_json_report.get("financial_data") if isinstance(p.full_json_report, dict) else None,
+            "schemes": p.full_json_report.get("schemes") if isinstance(p.full_json_report, dict) else [],
+            "full_json_report": p.full_json_report,
+        }
+        for p in plans
+    ]
 
 
 @app.delete("/api/my-plans/{plan_id}")
-def delete_my_plan(plan_id: str, authorization: Optional[str] = Header(None)):
-    """Delete a saved business plan by ID."""
-    global PLANS_STORE
-    initial_len = len(PLANS_STORE)
-    PLANS_STORE = [p for p in PLANS_STORE if p.get("id") != plan_id]
-    if len(PLANS_STORE) == initial_len:
+def delete_my_plan(
+    plan_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Delete a saved business plan by ID from the PostgreSQL database."""
+    cleaned_id = plan_id.replace("plan-", "")
+    plan = None
+    if cleaned_id.isdigit():
+        plan = db.query(models.BusinessPlan).filter(models.BusinessPlan.id == int(cleaned_id)).first()
+
+    if not plan:
         raise HTTPException(status_code=404, detail="Plan not found")
-    return {"status": "success", "message": f"Plan {plan_id} deleted"}
+
+    db.delete(plan)
+    db.commit()
+    return {"status": "success", "message": f"Plan {plan_id} deleted successfully"}
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    app_module = "backend.main:app" if Path("backend").is_dir() else "main:app"
+    uvicorn.run(app_module, host="0.0.0.0", port=8000, reload=True)
