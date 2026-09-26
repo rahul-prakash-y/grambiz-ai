@@ -1,391 +1,328 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Calculator, 
-  IndianRupee, 
-  Percent, 
   Landmark, 
   FileDown, 
-  CheckCircle, 
   Sparkles, 
-  Coins, 
-  Clock, 
-  TrendingUp,
-  Building,
-  RefreshCw
+  RotateCcw,
 } from 'lucide-react';
 import { useBusinessIdea } from '../../context/BusinessIdeaContext';
+import ProjectCostSection from '../calculator/ProjectCostSection';
+import FundingGapSection from '../calculator/FundingGapSection';
+import EmiCalculatorSection from '../calculator/EmiCalculatorSection';
+import ProposalModal from '../calculator/ProposalModal';
 
 export default function CalculatorView({ t, lang, onNavigate }) {
-  const { ideaData } = useBusinessIdea();
-  const initInv = Number(ideaData?.investment) || 250000;
+  const { ideaData, updateIdeaData, analysisResult } = useBusinessIdea();
 
-  const [machinery, setMachinery] = useState(Math.round(initInv * 0.55));
-  const [infrastructure, setInfrastructure] = useState(Math.round(initInv * 0.15));
-  const [workingCapital, setWorkingCapital] = useState(Math.round(initInv * 0.30));
-  const [monthlySales, setMonthlySales] = useState(Math.round(initInv * 0.70));
-  const [monthlyExpenses, setMonthlyExpenses] = useState(Math.round(initInv * 0.45));
-  const [selectedScheme, setSelectedScheme] = useState('pmegp-special');
-  const [exported, setExported] = useState(false);
+  // Available Capital from global state
+  const globalAvailableCapital = Number(ideaData?.availableCapital ?? ideaData?.investment) || 250000;
+  const currentCategory = ideaData?.category || 'Grocery';
+  const currentLocation = ideaData?.location || 'Kallupatti Village, Madurai';
 
-  // Sync if ideaData changes
-  useEffect(() => {
-    if (ideaData?.investment) {
-      const inv = Number(ideaData.investment);
-      setMachinery(Math.round(inv * 0.55));
-      setInfrastructure(Math.round(inv * 0.15));
-      setWorkingCapital(Math.round(inv * 0.30));
-      setMonthlySales(Math.round(inv * 0.70));
-      setMonthlyExpenses(Math.round(inv * 0.45));
-    }
-  }, [ideaData?.investment, ideaData?.category]);
-
-  // Scheme configurations
-  const schemes = {
-    'pmegp-special': {
-      nameEn: 'PMEGP Rural (SC/ST/OBC/Women/Ex-Ser - 35% Subsidy)',
-      nameTa: 'PMEGP கிராமப்புறம் (SC/ST/OBC/பெண்கள் - 35% மானியம்)',
-      subsidyRate: 0.35,
-      promoterRate: 0.05,
-    },
-    'pmegp-gen': {
-      nameEn: 'PMEGP Rural General (25% Subsidy)',
-      nameTa: 'PMEGP கிராமப்புற பொதுப் பிரிவு (25% மானியம்)',
-      subsidyRate: 0.25,
-      promoterRate: 0.10,
-    },
-    'pmfme': {
-      nameEn: 'PMFME Food Processing Scheme (35% Subsidy, Max ₹10L)',
-      nameTa: 'PMFME உணவு பதப்படுத்துதல் (35% மானியம், அதிகபட்சம் ₹10L)',
-      subsidyRate: 0.35,
-      promoterRate: 0.10,
-    },
-    'standard': {
-      nameEn: 'Standard Commercial Bank Mudra Loan (0% Grant)',
-      nameTa: 'நிலையான வணிக வங்கி முத்ரா கடன் (0% மானியம்)',
-      subsidyRate: 0.0,
-      promoterRate: 0.15,
+  // Benchmark cost distribution based on category
+  const getCategoryDefaults = (cat, baseCapital) => {
+    switch (cat) {
+      case 'Grocery':
+        return {
+          equipment: Math.round(baseCapital * 0.45),
+          inventory: Math.round(baseCapital * 0.35),
+          workingCapital: Math.round(baseCapital * 0.20)
+        };
+      case 'Tailoring':
+        return {
+          equipment: Math.round(baseCapital * 0.60),
+          inventory: Math.round(baseCapital * 0.20),
+          workingCapital: Math.round(baseCapital * 0.20)
+        };
+      case 'Agri-Inputs':
+        return {
+          equipment: Math.round(baseCapital * 0.30),
+          inventory: Math.round(baseCapital * 0.50),
+          workingCapital: Math.round(baseCapital * 0.20)
+        };
+      case 'Dairy':
+        return {
+          equipment: Math.round(baseCapital * 0.65),
+          inventory: Math.round(baseCapital * 0.15),
+          workingCapital: Math.round(baseCapital * 0.20)
+        };
+      default:
+        return {
+          equipment: Math.round(baseCapital * 0.50),
+          inventory: Math.round(baseCapital * 0.30),
+          workingCapital: Math.round(baseCapital * 0.20)
+        };
     }
   };
 
-  const currentScheme = schemes[selectedScheme];
+  const initialDefaults = getCategoryDefaults(currentCategory, globalAvailableCapital);
 
-  // Financial calculations
-  const totalCost = machinery + infrastructure + workingCapital;
-  const subsidyAmount = Math.round(totalCost * currentScheme.subsidyRate);
-  const promoterEquity = Math.round(totalCost * currentScheme.promoterRate);
-  const bankLoanRequired = Math.max(0, totalCost - subsidyAmount - promoterEquity);
+  // SECTION 1: Project Cost Inputs State
+  const [equipment, setEquipment] = useState(initialDefaults.equipment);
+  const [inventory, setInventory] = useState(initialDefaults.inventory);
+  const [workingCapital, setWorkingCapital] = useState(initialDefaults.workingCapital);
 
-  const monthlyNet = monthlySales - monthlyExpenses;
-  const annualNet = monthlyNet * 12;
+  // SECTION 2: Funding Gap State
+  const [selectedScheme, setSelectedScheme] = useState('pmegp-special');
 
-  // Payback period in months
-  const paybackMonths = monthlyNet > 0 ? (totalCost / monthlyNet).toFixed(1) : 0;
-  // ROI percentage
-  const roiPercent = totalCost > 0 ? ((annualNet / totalCost) * 100).toFixed(1) : 0;
+  // SECTION 3: EMI Calculator State
+  const [interestRate, setInterestRate] = useState(8.5); // Subsidized PMEGP/Rural rate
+  const [tenureMonths, setTenureMonths] = useState(60);  // 5 Years default
+  const [customLoanAmount, setCustomLoanAmount] = useState(0);
 
-  // Approx monthly loan EMI at 8.5% for 5 years (60 months)
-  const monthlyInterestRate = 0.085 / 12;
-  const emi = bankLoanRequired > 0 
-    ? Math.round((bankLoanRequired * monthlyInterestRate * Math.pow(1 + monthlyInterestRate, 60)) / (Math.pow(1 + monthlyInterestRate, 60) - 1))
+  // Proposal Modal State
+  const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
+  const [copyNotification, setCopyNotification] = useState(false);
+
+  // Sync defaults when global idea category or capital changes significantly
+  useEffect(() => {
+    const defaults = getCategoryDefaults(currentCategory, globalAvailableCapital);
+    setEquipment(defaults.equipment);
+    setInventory(defaults.inventory);
+    setWorkingCapital(defaults.workingCapital);
+  }, [currentCategory]);
+
+  // Calculations
+  const totalProjectCost = (Number(equipment) || 0) + (Number(inventory) || 0) + (Number(workingCapital) || 0);
+  const fundingGap = totalProjectCost - globalAvailableCapital;
+  const requiredLoanAmount = Math.max(0, fundingGap);
+
+  // Calculate EMI for proposal preview
+  const r = (interestRate / 12) / 100;
+  const emiFactor = Math.pow(1 + r, tenureMonths);
+  const previewEmi = requiredLoanAmount > 0 && interestRate > 0 && tenureMonths > 0
+    ? Math.round((requiredLoanAmount * r * emiFactor) / (emiFactor - 1))
+    : requiredLoanAmount > 0 && tenureMonths > 0
+    ? Math.round(requiredLoanAmount / tenureMonths)
     : 0;
+  const previewTotalPayable = previewEmi * tenureMonths;
+  const previewTotalInterest = Math.max(0, previewTotalPayable - requiredLoanAmount);
 
-  const handleExport = () => {
-    setExported(true);
-    setTimeout(() => setExported(false), 3000);
+  // Reset to active category benchmarks
+  const handleResetToCategoryBenchmarks = () => {
+    const defaults = getCategoryDefaults(currentCategory, globalAvailableCapital);
+    setEquipment(defaults.equipment);
+    setInventory(defaults.inventory);
+    setWorkingCapital(defaults.workingCapital);
+  };
+
+  // Update Available Capital in Global State
+  const handleUpdateAvailableCapital = (newCapital) => {
+    updateIdeaData({
+      availableCapital: newCapital,
+      investment: newCapital
+    });
+  };
+
+  // Scheme names helper
+  const schemeNames = {
+    'pmegp-special': 'PMEGP Rural Special (35% Grant)',
+    'pmegp-general': 'PMEGP Rural General (25% Grant)',
+    'mudra-kishore': 'MUDRA Scheme (0% Grant)',
+    'nabard-agri': 'NABARD Agri-Infra Fund (33% Grant)',
   };
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs">
-        <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-2">
-          <Calculator className="w-3.5 h-3.5 text-emerald-600" />
-          <span>{t.calculator.badge}</span>
-        </div>
-        <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">
-          {t.calculator.title}
-        </h1>
-        <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-3xl">
-          {t.calculator.subtitle}
-        </p>
-      </div>
-
-      {/* Synced Idea Banner */}
-      {ideaData && (
-        <div className="bg-emerald-50/80 border border-emerald-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
-              <Sparkles className="w-4 h-4" />
-            </div>
-            <div>
-              <span className="font-bold text-emerald-950 block">
-                {lang === 'ta' ? 'வணிக யோசனை வழிகாட்டியுடன் இணைக்கப்பட்டுள்ளது' : 'Linked to Active Wizard Idea'}: <strong className="text-emerald-900">{ideaData.category}</strong> in <strong className="text-emerald-900">{ideaData.location}</strong>
-              </span>
-              <span className="text-emerald-700">
-                {lang === 'ta' 
-                  ? `திட்டமிட்ட மூலதனம்: ₹${Number(ideaData.investment).toLocaleString('en-IN')}` 
-                  : `Configured capital: ₹${Number(ideaData.investment).toLocaleString('en-IN')} (Machinery 55%, Infrastructure 15%, Working Capital 30%)`}
-              </span>
-            </div>
+      {/* 1. Header Banner */}
+      <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-2">
+            <Calculator className="w-3.5 h-3.5 text-emerald-600" />
+            <span>{t.calculator.badge}</span>
           </div>
+          <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">
+            {t.calculator.title}
+          </h1>
+          <p className="text-xs sm:text-sm text-slate-500 mt-1 max-w-3xl">
+            {t.calculator.subtitle}
+          </p>
+        </div>
+
+        {/* Header Action Buttons */}
+        <div className="flex flex-wrap items-center gap-2.5 self-start md:self-auto">
           <button
-            onClick={() => onNavigate('new-idea')}
-            className="btn btn-xs bg-white hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-bold rounded-lg shrink-0"
+            type="button"
+            onClick={handleResetToCategoryBenchmarks}
+            className="btn btn-sm btn-ghost bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl gap-1.5"
+            title="Reset equipment, inventory, and working capital to category standard"
           >
-            {lang === 'ta' ? 'வழிகாட்டியைத் திருத்து' : 'Edit in Wizard'}
+            <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+            <span>{lang === 'ta' ? 'இயல்புநிலை' : 'Reset Ratios'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsProposalModalOpen(true)}
+            className="btn btn-sm btn-primary text-white text-xs font-bold rounded-xl gap-1.5 shadow-sm"
+          >
+            <FileDown className="w-4 h-4" />
+            <span>{t.calculator.printReportBtn}</span>
           </button>
         </div>
-      )}
+      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Form: Sliders & Scheme Selector (6 cols) */}
-        <div className="lg:col-span-6 bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs space-y-5">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-100 text-slate-800 font-bold text-sm">
-            <span className="flex items-center gap-2">
-              <Coins className="w-4 h-4 text-emerald-600" />
-              {lang === 'ta' ? 'திட்ட செலவு விவரங்கள்' : 'Project Cost & Operational Inputs'}
-            </span>
-            <span className="text-xs text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold">
-              Live Calc
-            </span>
+      {/* 2. Synced Idea & Global State Capital Indicator Bar */}
+      <div className="bg-gradient-to-r from-emerald-50/90 via-teal-50/80 to-sky-50/90 border border-emerald-200/90 rounded-2xl p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs shadow-2xs">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-emerald-700 text-white flex items-center justify-center shrink-0 shadow-xs">
+            <Sparkles className="w-4 h-4" />
           </div>
-
-          {/* Scheme Selector */}
-          <div className="space-y-1.5">
-            <label className="text-xs font-bold text-slate-700 block">
-              {t.calculator.schemeLabel}
-            </label>
-            <select
-              value={selectedScheme}
-              onChange={(e) => setSelectedScheme(e.target.value)}
-              className="select select-bordered select-sm w-full text-xs font-semibold focus:border-emerald-600"
-            >
-              {Object.entries(schemes).map(([key, val]) => (
-                <option key={key} value={key}>
-                  {lang === 'ta' ? val.nameTa : val.nameEn}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {/* 1. Machinery Cost */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-700">{t.calculator.machineryCost}</span>
-              <span className="font-extrabold text-slate-900">₹{machinery.toLocaleString('en-IN')}</span>
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-extrabold text-emerald-950 text-xs sm:text-sm">
+                {currentCategory}
+              </span>
+              <span className="text-slate-400">•</span>
+              <span className="text-emerald-800 font-medium">
+                {currentLocation}
+              </span>
+              <span className="badge badge-xs bg-emerald-700 text-white font-bold border-none">
+                {lang === 'ta' ? 'நடப்பு யோசனை' : 'Active Wizard Idea'}
+              </span>
             </div>
-            <input
-              type="range"
-              min="50000"
-              max="800000"
-              step="10000"
-              value={machinery}
-              onChange={(e) => setMachinery(Number(e.target.value))}
-              className="range range-xs range-primary"
-            />
-          </div>
-
-          {/* 2. Shed / Infrastructure Cost */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-700">{t.calculator.infrastructureCost}</span>
-              <span className="font-extrabold text-slate-900">₹{infrastructure.toLocaleString('en-IN')}</span>
+            <div className="text-emerald-700 mt-0.5">
+              <span>{lang === 'ta' ? 'உலகளாவிய மூலதனம் (Global Capital):' : 'Available Capital in Global State:'} </span>
+              <strong className="text-emerald-950 font-black">₹{globalAvailableCapital.toLocaleString('en-IN')}</strong>
             </div>
-            <input
-              type="range"
-              min="20000"
-              max="300000"
-              step="5000"
-              value={infrastructure}
-              onChange={(e) => setInfrastructure(Number(e.target.value))}
-              className="range range-xs range-secondary"
-            />
-          </div>
-
-          {/* 3. Working Capital */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-700">{t.calculator.workingCapital}</span>
-              <span className="font-extrabold text-slate-900">₹{workingCapital.toLocaleString('en-IN')}</span>
-            </div>
-            <input
-              type="range"
-              min="30000"
-              max="400000"
-              step="10000"
-              value={workingCapital}
-              onChange={(e) => setWorkingCapital(Number(e.target.value))}
-              className="range range-xs range-accent"
-            />
-          </div>
-
-          <div className="pt-2 border-t border-slate-100" />
-
-          {/* 4. Expected Monthly Sales */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-700">{t.calculator.monthlyRevenue}</span>
-              <span className="font-extrabold text-emerald-700">₹{monthlySales.toLocaleString('en-IN')}</span>
-            </div>
-            <input
-              type="range"
-              min="50000"
-              max="500000"
-              step="5000"
-              value={monthlySales}
-              onChange={(e) => setMonthlySales(Number(e.target.value))}
-              className="range range-xs range-primary"
-            />
-          </div>
-
-          {/* 5. Monthly Operating Costs */}
-          <div className="space-y-1.5">
-            <div className="flex justify-between items-center text-xs">
-              <span className="font-bold text-slate-700">{t.calculator.monthlyCost}</span>
-              <span className="font-extrabold text-rose-600">₹{monthlyExpenses.toLocaleString('en-IN')}</span>
-            </div>
-            <input
-              type="range"
-              min="30000"
-              max="400000"
-              step="5000"
-              value={monthlyExpenses}
-              onChange={(e) => setMonthlyExpenses(Number(e.target.value))}
-              className="range range-xs"
-            />
           </div>
         </div>
 
-        {/* Right: Financial Breakdown Card (6 cols) */}
-        <div className="lg:col-span-6 space-y-4">
-          <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <span className="font-bold text-slate-800 text-sm">
-                {t.calculator.summaryTitle}
-              </span>
-              <span className="badge badge-sm badge-success text-white font-bold">
-                {Math.round(currentScheme.subsidyRate * 100)}% {lang === 'ta' ? 'மானியம்' : 'Subsidy'}
-              </span>
-            </div>
+        <button
+          onClick={() => onNavigate('new-idea')}
+          className="btn btn-xs bg-white hover:bg-emerald-100 text-emerald-800 border-emerald-300 font-bold rounded-lg shrink-0 shadow-2xs"
+        >
+          {lang === 'ta' ? 'வழிகாட்டியில் மாற்று' : 'Edit in Idea Wizard'}
+        </button>
+      </div>
 
-            {/* Financial Rows */}
-            <div className="space-y-3 text-xs">
-              {/* Total Project Cost */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <span className="font-bold text-slate-600">{t.calculator.totalProjectCost}</span>
-                <span className="text-base font-extrabold text-slate-900">
-                  ₹{totalCost.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              {/* Subsidy Grant Deduction */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-emerald-50 border border-emerald-200/70 text-emerald-900">
-                <div>
-                  <span className="font-bold block">{t.calculator.subsidyDeduction}</span>
-                  <span className="text-[11px] text-emerald-700 font-medium">
-                    {lang === 'ta' ? 'அரசு வழங்கும் இலவச உதவித்தொகை' : 'Non-repayable Govt Free Grant'}
-                  </span>
-                </div>
-                <span className="text-base font-extrabold text-emerald-700">
-                  + ₹{subsidyAmount.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              {/* Promoter Own Equity */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-100">
-                <div>
-                  <span className="font-bold text-slate-700">{t.calculator.ownEquity}</span>
-                  <span className="text-[11px] text-slate-400 block">
-                    {lang === 'ta' ? 'தொழில் முனைவோரின் சொந்த பங்கு' : 'Promoter contribution'}
-                  </span>
-                </div>
-                <span className="text-sm font-bold text-slate-800">
-                  ₹{promoterEquity.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              {/* Bank Loan Required */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-sky-50 border border-sky-200/70 text-sky-950">
-                <div>
-                  <span className="font-bold block">{t.calculator.bankLoan}</span>
-                  <span className="text-[11px] text-sky-700 font-medium">
-                    {lang === 'ta' ? `மாத தவணை (EMI): ~₹${emi.toLocaleString('en-IN')} (5 ஆண்டுகள்)` : `Estimated EMI: ~₹${emi.toLocaleString('en-IN')}/mo (60 mos)`}
-                  </span>
-                </div>
-                <span className="text-base font-extrabold text-sky-700">
-                  ₹{bankLoanRequired.toLocaleString('en-IN')}
-                </span>
-              </div>
-            </div>
-
-            {/* Bottom 3 KPI Badges: Profit, Payback, ROI */}
-            <div className="grid grid-cols-3 gap-2.5 pt-2">
-              <div className="p-3 rounded-xl bg-slate-50 text-center border border-slate-100">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block truncate">
-                  {t.calculator.monthlyNetProfit}
-                </span>
-                <span className="text-sm font-extrabold text-emerald-700 block mt-0.5">
-                  ₹{monthlyNet.toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 text-center border border-slate-100">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block truncate">
-                  {t.calculator.breakEvenPeriod}
-                </span>
-                <span className="text-sm font-extrabold text-slate-800 block mt-0.5">
-                  {paybackMonths} {lang === 'ta' ? 'மாதங்கள்' : 'mos'}
-                </span>
-              </div>
-
-              <div className="p-3 rounded-xl bg-slate-50 text-center border border-slate-100">
-                <span className="text-[10px] uppercase font-bold text-slate-400 block truncate">
-                  {t.calculator.roiAnnual}
-                </span>
-                <span className="text-sm font-extrabold text-sky-700 block mt-0.5">
-                  {roiPercent}%
-                </span>
-              </div>
-            </div>
-
-            {/* Export Button */}
-            <div className="pt-2">
-              <button
-                onClick={handleExport}
-                className="w-full btn btn-primary gap-2 font-bold shadow-md rounded-xl text-white"
-              >
-                {exported ? (
-                  <>
-                    <CheckCircle className="w-4 h-4 text-white" />
-                    <span>{lang === 'ta' ? 'அறிக்கை பதிவிறக்கப்பட்டது!' : 'Bank Proposal PDF Exported!'}</span>
-                  </>
-                ) : (
-                  <>
-                    <FileDown className="w-4 h-4" />
-                    <span>{t.calculator.printReportBtn}</span>
-                  </>
-                )}
-              </button>
-            </div>
+      {/* 3. Logical Pipeline Stepper Banner */}
+      <div className="hidden md:grid grid-cols-3 gap-4 text-xs">
+        <div className="p-3 rounded-xl bg-white border border-slate-200/90 flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-black flex items-center justify-center text-[11px]">1</div>
+          <div>
+            <span className="font-bold text-slate-800 block">{t.calculator.projectCostTitle}</span>
+            <span className="text-[10px] text-slate-400">Equipment + Inventory + WC</span>
           </div>
+        </div>
 
-          {/* Bank Tie-up Guidance Box */}
-          <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-100 flex items-start gap-3">
-            <Landmark className="w-5 h-5 text-emerald-700 shrink-0 mt-0.5" />
-            <div className="text-xs text-slate-700 space-y-1">
-              <span className="font-bold text-emerald-950 block">
-                {lang === 'ta' ? 'வங்கி கடன் வழிகாட்டுதல்' : 'PMEGP / Mudra Loan Submission Tip'}
-              </span>
-              <p className="leading-relaxed">
-                {lang === 'ta'
-                  ? 'கல்லுப்பட்டி ஸ்டேட் பேங்க் ஆஃப் இந்தியா (SBI) கிளையில் PMEGP விண்ணப்பங்கள் விரைவாக செயலாக்கப்படுகின்றன. விரிவான திட்ட அறிக்கையை (DPR) உடன் இணைக்கவும்.'
-                  : 'SBI Kallupatti & Tamil Nadu Grama Bank branches support direct online PMEGP portal integration with 0% collateral up to ₹10 Lakh.'
-                }
-              </p>
-            </div>
+        <div className="p-3 rounded-xl bg-white border border-slate-200/90 flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full bg-sky-600 text-white font-black flex items-center justify-center text-[11px]">2</div>
+          <div>
+            <span className="font-bold text-slate-800 block">{t.calculator.fundingGapTitle}</span>
+            <span className="text-[10px] text-slate-400">Total Cost - Available Capital</span>
+          </div>
+        </div>
+
+        <div className="p-3 rounded-xl bg-white border border-slate-200/90 flex items-center gap-2.5">
+          <div className="w-6 h-6 rounded-full bg-teal-600 text-white font-black flex items-center justify-center text-[11px]">3</div>
+          <div>
+            <span className="font-bold text-slate-800 block">{t.calculator.emiSectionTitle}</span>
+            <span className="text-[10px] text-slate-400">Instant Tenure & EMI Calculation</span>
           </div>
         </div>
       </div>
+
+      {/* 4. THE MAIN DASHBOARD GRID WITH THREE MAIN SECTIONS */}
+      <div className="space-y-6">
+        {/* Row 1: Section 1 (Project Cost Estimation) & Section 2 (Funding Gap) */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch">
+          {/* Section 1: Project Cost Estimation */}
+          <ProjectCostSection
+            equipment={equipment}
+            setEquipment={setEquipment}
+            inventory={inventory}
+            setInventory={setInventory}
+            workingCapital={workingCapital}
+            setWorkingCapital={setWorkingCapital}
+            category={currentCategory}
+            t={t}
+            lang={lang}
+          />
+
+          {/* Section 2: Funding Gap */}
+          <FundingGapSection
+            totalProjectCost={totalProjectCost}
+            availableCapital={globalAvailableCapital}
+            onUpdateAvailableCapital={handleUpdateAvailableCapital}
+            selectedScheme={selectedScheme}
+            setSelectedScheme={setSelectedScheme}
+            t={t}
+            lang={lang}
+            category={currentCategory}
+            location={currentLocation}
+          />
+        </div>
+
+        {/* Row 2: Section 3: EMI Calculator */}
+        <div className="w-full">
+          <EmiCalculatorSection
+            requiredLoanAmount={requiredLoanAmount}
+            customLoanAmount={customLoanAmount}
+            setCustomLoanAmount={setCustomLoanAmount}
+            interestRate={interestRate}
+            setInterestRate={setInterestRate}
+            tenureMonths={tenureMonths}
+            setTenureMonths={setTenureMonths}
+            t={t}
+            lang={lang}
+            projectedMonthlyProfit={analysisResult?.monthlyProfitMin}
+          />
+        </div>
+      </div>
+
+      {/* 5. Bank Application Guidance Card */}
+      <div className="p-5 rounded-2xl bg-white border border-slate-200/90 shadow-xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0 border border-emerald-200">
+            <Landmark className="w-5 h-5" />
+          </div>
+          <div className="space-y-1">
+            <h4 className="text-sm font-extrabold text-slate-900">
+              {lang === 'ta' ? 'அருகிலுள்ள வங்கி கிளை மூலம் விண்ணப்பிக்கவும்' : 'Ready to Submit to Nearby Rural Banks?'}
+            </h4>
+            <p className="text-xs text-slate-500 max-w-2xl leading-relaxed">
+              {lang === 'ta' 
+                ? 'உங்கள் திட்ட மதிப்பீடு PMEGP மற்றும் முத்ரா கடன் விதிமுறைகளுடன் ஒத்துள்ளது. விரிவான திட்ட அறிக்கையை (DPR) பதிவிறக்கி SBI அல்லது பாண்டியன் கிராம வங்கி கிளையில் சமர்ப்பிக்கவும்.'
+                : 'Your cost estimates and debt structure qualify for collateral-free PMEGP / MUDRA term financing up to ₹10 Lakh at SBI Kallupatti and Tamil Nadu Grama Bank branches.'}
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setIsProposalModalOpen(true)}
+          className="btn btn-sm btn-outline hover:bg-emerald-700 hover:text-white border-emerald-600 text-emerald-800 font-bold rounded-xl shrink-0 gap-1.5"
+        >
+          <FileDown className="w-4 h-4" />
+          <span>{lang === 'ta' ? 'முன்மொழிவை பதிவிறக்கு' : 'Generate Bank Dossier'}</span>
+        </button>
+      </div>
+
+      {/* Proposal Modal */}
+      <ProposalModal
+        isOpen={isProposalModalOpen}
+        onClose={() => setIsProposalModalOpen(false)}
+        lang={lang}
+        t={t}
+        data={{
+          category: currentCategory,
+          location: currentLocation,
+          equipment,
+          inventory,
+          workingCapital,
+          totalProjectCost,
+          availableCapital: globalAvailableCapital,
+          requiredLoanAmount,
+          selectedSchemeName: schemeNames[selectedScheme] || 'PMEGP Rural Scheme',
+          subsidyAmount: Math.round(totalProjectCost * (selectedScheme === 'pmegp-special' ? 0.35 : selectedScheme === 'pmegp-general' ? 0.25 : 0)),
+          interestRate,
+          tenureMonths,
+          monthlyEmi: previewEmi,
+          totalInterest: previewTotalInterest,
+          totalPayable: previewTotalPayable
+        }}
+      />
     </div>
   );
 }

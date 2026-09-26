@@ -185,6 +185,7 @@ export function BusinessIdeaProvider({ children }) {
     locationType: 'Village Center (Panchayat)',
     category: 'Grocery',
     investment: 250000,
+    availableCapital: 250000,
   });
 
   // Analysis state
@@ -302,7 +303,15 @@ export function BusinessIdeaProvider({ children }) {
   }
 
   const updateIdeaData = (fields) => {
-    setIdeaData((prev) => ({ ...prev, ...fields }));
+    setIdeaData((prev) => {
+      const updated = { ...prev, ...fields };
+      if (fields.availableCapital !== undefined && fields.investment === undefined) {
+        updated.investment = Number(fields.availableCapital);
+      } else if (fields.investment !== undefined && fields.availableCapital === undefined) {
+        updated.availableCapital = Number(fields.investment);
+      }
+      return updated;
+    });
   };
 
   const triggerAnalysis = () => {
