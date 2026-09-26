@@ -1,5 +1,7 @@
+import json
 import os
 from pathlib import Path
+import re
 from typing import List, Optional
 import requests
 from dotenv import load_dotenv
@@ -10,13 +12,15 @@ try:
     from .schemas import (
         BusinessAnalysisRequest,
         FinancialCalcRequest,
-        CompetitorResponse
+        CompetitorResponse,
+        AdvisoryResponse
     )
 except (ImportError, ValueError):
     from schemas import (
         BusinessAnalysisRequest,
         FinancialCalcRequest,
-        CompetitorResponse
+        CompetitorResponse,
+        AdvisoryResponse
     )
 
 # Load environment variables using python-dotenv
@@ -197,6 +201,151 @@ fetch_competitors = get_nearby_competitors
 search_competitors = get_nearby_competitors
 
 
+def parse_advisory_json(raw_text: str) -> dict:
+    """
+    Parses LLM output into a dictionary, stripping markdown code fences if present.
+    Validates presence of required keys: market_insights, swot_analysis, and risks.
+    Handles exceptions if the LLM output fails to parse.
+    """
+    clean_text = raw_text.strip()
+
+    # Strip markdown code blocks like ```json ... ``` or ``` ... ```
+    if clean_text.startswith("```"):
+        clean_text = re.sub(r"^```(?:json)?\s*", "", clean_text, flags=re.IGNORECASE)
+        clean_text = re.sub(r"\s*```$", "", clean_text)
+        clean_text = clean_text.strip()
+
+    try:
+        data = json.loads(clean_text)
+    except Exception as exc:
+        # Fallback regex search for json block if surrounded by extraneous text
+        json_match = re.search(r"\{.*\}", clean_text, re.DOTALL)
+        if json_match:
+            try:
+                data = json.loads(json_match.group(0))
+            except Exception:
+                raise HTTPException(
+                    status_code=502,
+                    detail=f"Failed to parse LLM output as JSON: {str(exc)}"
+                )
+        else:
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to parse LLM output as JSON: {str(exc)}"
+            )
+
+    if not isinstance(data, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="LLM output did not parse into a valid JSON object."
+        )
+
+    required_keys = ["market_insights", "swot_analysis", "risks"]
+    missing = [k for k in required_keys if k not in data]
+    if missing:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM JSON missing required key(s): {', '.join(missing)}"
+        )
+
+    swot = data.get("swot_analysis")
+    if not isinstance(swot, dict):
+        raise HTTPException(
+            status_code=502,
+            detail="'swot_analysis' in LLM output must be an object with strengths, weaknesses, opportunities, threats."
+        )
+
+    return {
+        "market_insights": list(data.get("market_insights", [])),
+        "swot_analysis": {
+            "strengths": list(swot.get("strengths", [])),
+            "weaknesses": list(swot.get("weaknesses", [])),
+            "opportunities": list(swot.get("opportunities", [])),
+            "threats": list(swot.get("threats", [])),
+        },
+        "risks": list(data.get("risks", []))
+    }
+
+
+def generate_business_advisory(
+    business_category: str,
+    location: str,
+    available_investment: float,
+    api_key: Optional[str] = None
+) -> dict:
+    """
+    Uses Google GenAI SDK (Gemini API) to generate a structured rural AI business advisory.
+    Constructs a structured prompt with business_category, location, and available_investment.
+    Enforces a JSON output with exactly three keys:
+      - market_insights: list of 3 bullet points
+      - swot_analysis: object with strengths, weaknesses, opportunities, threats arrays
+      - risks: list of 2 strings
+    Parses the JSON response and returns it to the client, handling exceptions on failure.
+    """
+    key = (
+        api_key
+        or os.getenv("GEMINI_API_KEY")
+        or os.getenv("GOOGLE_GENAI_API_KEY")
+        or os.getenv("GOOGLE_API_KEY")
+    )
+    if not key:
+        raise HTTPException(
+            status_code=500,
+            detail="GEMINI_API_KEY environment variable is not configured. Please set it in your .env file or environment."
+        )
+
+    prompt = f"""You are an expert rural and semi-urban business intelligence advisor in India.
+Provide a strategic viability advisory report for the following micro-enterprise venture:
+
+- Business Category: {business_category}
+- Location: {location}
+- Available Investment Capital: INR {available_investment:,.2f}
+
+You MUST return a JSON-formatted string with EXACTLY three top-level keys:
+1. "market_insights": A list of exactly 3 concise, highly relevant bullet point strings focusing on local rural demand, demographics, and viability in {location}.
+2. "swot_analysis": A JSON object with exactly four keys:
+   - "strengths": An array of strings describing key operational, local, or financial strengths.
+   - "weaknesses": An array of strings describing initial capital limitations, operational bottlenecks, or skill dependencies.
+   - "opportunities": An array of strings describing rural market expansion, government schemes (e.g. MUDRA, PMEGP, NABARD), or unmet demand.
+   - "threats": An array of strings describing local competition, environmental/seasonal factors, or price fluctuations.
+3. "risks": A list of exactly 2 concise strings highlighting the most critical execution or financial risks for an investment of INR {available_investment:,.2f}.
+
+Return ONLY raw JSON. Do NOT wrap in markdown code blocks or add any additional commentary outside the JSON."""
+
+    try:
+        from google import genai
+        from google.genai import types
+
+        client = genai.Client(api_key=key)
+        model_name = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+        
+        response = client.models.generate_content(
+            model=model_name,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            )
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Google GenAI (Gemini) API invocation failed: {str(exc)}"
+        )
+
+    if not response or not response.text:
+        raise HTTPException(
+            status_code=502,
+            detail="Empty or null response received from Google Gemini API."
+        )
+
+    # Parse JSON output and handle exceptions
+    return parse_advisory_json(response.text)
+
+
+generate_advisory = generate_business_advisory
+
+
 @app.get("/")
 def health_check():
     """
@@ -211,6 +360,19 @@ def health_check_alias():
     Alternative /health endpoint alias.
     """
     return {"status": "GramBiz API is running"}
+
+
+@app.post("/api/advisory/generate", response_model=AdvisoryResponse)
+def generate_advisory_endpoint(payload: BusinessAnalysisRequest):
+    """
+    POST endpoint accepting BusinessAnalysisRequest. Generates strategic rural market insights,
+    SWOT analysis, and risk factors using Google GenAI SDK (Gemini API).
+    """
+    return generate_business_advisory(
+        business_category=payload.business_category,
+        location=payload.location,
+        available_investment=payload.available_investment
+    )
 
 
 @app.post("/api/competitors", response_model=List[CompetitorResponse])

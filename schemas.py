@@ -95,3 +95,67 @@ class CompetitorResponse(BaseModel):
         }
     }
 
+
+class SwotAnalysis(BaseModel):
+    """
+    SWOT Analysis breakdown for rural business viability.
+    """
+    strengths: list[str] = Field(default_factory=list, description="Operational and locational strengths")
+    weaknesses: list[str] = Field(default_factory=list, description="Capital, skill, or resource limitations")
+    opportunities: list[str] = Field(default_factory=list, description="Government subsidies, market gaps, or expansion prospects")
+    threats: list[str] = Field(default_factory=list, description="Competition, environmental factors, or price volatility")
+
+
+class AdvisoryResponse(BaseModel):
+    """
+    Structured AI advisory response returned by Gemini API.
+    Contains exactly three keys: market_insights, swot_analysis, and risks.
+    """
+    market_insights: list[str] = Field(
+        ..., 
+        description="List of 3 bullet points detailing local market demand and customer insights"
+    )
+    swot_analysis: SwotAnalysis = Field(
+        ..., 
+        description="Object containing strengths, weaknesses, opportunities, and threats"
+    )
+    risks: list[str] = Field(
+        ..., 
+        description="List of 2 critical execution or financial risks"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "market_insights": [
+                    "High daily household consumption of fresh milk and dairy products in the local Panchayat cluster.",
+                    "Existing regional milk chilling center within 6km provides guaranteed daily procurement buyback.",
+                    "Lack of localized value-added processing (paneer, curd, ghee) offers 35% higher profit margins."
+                ],
+                "swot_analysis": {
+                    "strengths": [
+                        "Low land lease cost and abundant green fodder availability during monsoon cycles.",
+                        "Predictable daily cash flow supporting recurring operational expenses."
+                    ],
+                    "weaknesses": [
+                        "High initial capital outlay required for high-yield crossbred livestock.",
+                        "Initial operational learning curve in automated milking hygiene and disease prevention."
+                    ],
+                    "opportunities": [
+                        "Eligible for 25% to 33% capital subsidy under NABARD's Dairy Entrepreneurship Development Scheme.",
+                        "Direct delivery model to local sweet shops and village tea stalls."
+                    ],
+                    "threats": [
+                        "Seasonal price surges in dry cattle feed and protein supplements.",
+                        "Risk of bovine illnesses during unseasonal rains without immediate veterinary access."
+                    ]
+                },
+                "risks": [
+                    "Liquidity strain if dry fodder prices increase by over 20% in the summer peak.",
+                    "Unplanned herd morbidity drastically reducing daily milk output below operational breakeven."
+                ]
+            }
+        }
+    }
+
+
