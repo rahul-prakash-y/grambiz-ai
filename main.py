@@ -11,7 +11,9 @@ from schemas import (
     BusinessAnalysisRequest,
     FinancialCalcRequest,
     CompetitorResponse,
-    AdvisoryResponse
+    AdvisoryResponse,
+    GovernmentScheme,
+    FinancialCalcResponse
 )
 
 # Load environment variables using python-dotenv
@@ -52,6 +54,190 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Static dictionary mapping business categories to mock government schemes
+GOVERNMENT_SCHEMES_MAP = {
+    "Agriculture": [
+        {
+            "scheme_name": "NABARD Dairy Entrepreneurship Development Scheme",
+            "short_code": "NABARD-DEDS",
+            "subsidy_percentage": 33.33,
+            "max_subsidy_amount": 300000.0,
+            "description": "Capital subsidy of up to 33.33% for establishing rural dairy units, breeding farms, and milk chilling infrastructure.",
+            "eligible_agency": "NABARD / Nationalised Commercial Banks"
+        },
+        {
+            "scheme_name": "PM Formalisation of Micro food processing Enterprises",
+            "short_code": "PMFME",
+            "subsidy_percentage": 35.0,
+            "max_subsidy_amount": 1000000.0,
+            "description": "Credit-linked capital subsidy for micro food processing units and agricultural value-add products.",
+            "eligible_agency": "Ministry of Food Processing Industries"
+        },
+        {
+            "scheme_name": "Agriculture Infrastructure Fund",
+            "short_code": "AIF",
+            "subsidy_percentage": 3.0,
+            "max_subsidy_amount": 20000000.0,
+            "description": "Medium-to-long term debt financing facility with 3% annual interest subvention for post-harvest infrastructure.",
+            "eligible_agency": "Department of Agriculture & Farmers Welfare"
+        }
+    ],
+    "Retail": [
+        {
+            "scheme_name": "Pradhan Mantri Mudra Yojana (Kishore / Tarun)",
+            "short_code": "MUDRA",
+            "subsidy_percentage": 0.0,
+            "max_subsidy_amount": 1000000.0,
+            "description": "Collateral-free institutional micro-credit loans up to ₹10 Lakh for rural grocery, apparel, and retail shops.",
+            "eligible_agency": "Public & Private Sector Commercial Banks / RRBs"
+        },
+        {
+            "scheme_name": "Prime Minister's Employment Generation Programme (PMEGP)",
+            "short_code": "PMEGP-Retail",
+            "subsidy_percentage": 25.0,
+            "max_subsidy_amount": 500000.0,
+            "description": "Margin money subsidy of up to 25% for general category and 35% for special categories in rural retail and trade.",
+            "eligible_agency": "KVIC / State KVI Boards / DIC"
+        },
+        {
+            "scheme_name": "PM SVANidhi Micro-Retail Credit",
+            "short_code": "PM-SVANIDHI",
+            "subsidy_percentage": 7.0,
+            "max_subsidy_amount": 50000.0,
+            "description": "Affordable collateral-free working capital loan with 7% interest subsidy for rural and semi-urban small retailers.",
+            "eligible_agency": "Commercial Banks / SIDBI"
+        }
+    ],
+    "Manufacturing": [
+        {
+            "scheme_name": "Prime Minister's Employment Generation Programme (PMEGP)",
+            "short_code": "PMEGP-Mfg",
+            "subsidy_percentage": 35.0,
+            "max_subsidy_amount": 1750000.0,
+            "description": "Government subsidy of up to 35% for rural manufacturing projects with project cost up to ₹50 Lakhs.",
+            "eligible_agency": "KVIC / MSME Department"
+        },
+        {
+            "scheme_name": "Credit Guarantee Fund Trust for Micro and Small Enterprises",
+            "short_code": "CGTMSE",
+            "subsidy_percentage": 0.0,
+            "max_subsidy_amount": 20000000.0,
+            "description": "Collateral-free credit facility up to ₹2 Crore with 85% credit guarantee coverage for rural manufacturing units.",
+            "eligible_agency": "SIDBI & Ministry of MSME"
+        },
+        {
+            "scheme_name": "MUDRA Tarun Scheme (Manufacturing)",
+            "short_code": "MUDRA-Tarun",
+            "subsidy_percentage": 0.0,
+            "max_subsidy_amount": 1000000.0,
+            "description": "Term loan and working capital credit between ₹5 Lakh and ₹10 Lakh for small manufacturing workshops.",
+            "eligible_agency": "Nationalised Banks & Regional Rural Banks"
+        }
+    ],
+    "Services": [
+        {
+            "scheme_name": "PMEGP Service Sector Subsidy",
+            "short_code": "PMEGP-Service",
+            "subsidy_percentage": 35.0,
+            "max_subsidy_amount": 700000.0,
+            "description": "Credit-linked capital subsidy up to 35% in rural areas for equipment repair, solar kiosks, and digital services.",
+            "eligible_agency": "KVIC / District Industries Centre"
+        },
+        {
+            "scheme_name": "Stand-Up India Scheme",
+            "short_code": "STAND-UP",
+            "subsidy_percentage": 0.0,
+            "max_subsidy_amount": 10000000.0,
+            "description": "Bank loans between ₹10 Lakh and ₹1 Crore to at least one SC/ST and one woman borrower per bank branch.",
+            "eligible_agency": "SIDBI / Scheduled Commercial Banks"
+        }
+    ]
+}
+
+
+def get_schemes_for_category(category: Optional[str]) -> List[dict]:
+    """
+    Returns mock government schemes matching the business category.
+    Performs case-insensitive keyword and exact matching, defaulting to Agriculture schemes.
+    """
+    cat = (category or "").strip().lower()
+    
+    if any(k in cat for k in ["agri", "farm", "dairy", "food", "crop", "cattle", "poultry", "goat"]):
+        return GOVERNMENT_SCHEMES_MAP["Agriculture"]
+    elif any(k in cat for k in ["retail", "store", "shop", "grocery", "mart", "kiosk", "trade"]):
+        return GOVERNMENT_SCHEMES_MAP["Retail"]
+    elif any(k in cat for k in ["manu", "craft", "textile", "handloom", "fabric", "mill", "product"]):
+        return GOVERNMENT_SCHEMES_MAP["Manufacturing"]
+    elif any(k in cat for k in ["serv", "repair", "solar", "logist", "auto", "tech"]):
+        return GOVERNMENT_SCHEMES_MAP["Services"]
+        
+    for k, v in GOVERNMENT_SCHEMES_MAP.items():
+        if k.lower() == cat:
+            return v
+            
+    return GOVERNMENT_SCHEMES_MAP["Agriculture"]
+
+
+def calculate_financial_projection(
+    project_cost: float,
+    available_capital: float,
+    interest_rate_percent: float,
+    tenure_months: int,
+    business_category: Optional[str] = "Agriculture"
+) -> dict:
+    """
+    Calculates deterministic financial indicators:
+      - funding_gap: project_cost - available_capital (0 if available_capital >= project_cost)
+      - monthly_emi: Standard formula [P x R x (1+R)^N]/[(1+R)^N-1]
+      - total_interest: Total interest payable over tenure
+      - total_payable: Total repayment amount
+      - schemes: Relevant government schemes based on business_category
+    """
+    # 1. funding_gap: (project_cost - available_capital). Return 0 if available capital is higher.
+    if available_capital >= project_cost:
+        funding_gap = 0.0
+    else:
+        funding_gap = round(project_cost - available_capital, 2)
+
+    # 2. monthly_emi: standard EMI formula [P x R x (1+R)^N]/[(1+R)^N-1]
+    # where P = funding_gap, R = monthly interest rate, N = tenure_months
+    if funding_gap <= 0.0 or tenure_months <= 0:
+        monthly_emi = 0.0
+        total_payable = 0.0
+        total_interest = 0.0
+    elif interest_rate_percent <= 0.0:
+        monthly_emi = round(funding_gap / tenure_months, 2)
+        total_payable = round(monthly_emi * tenure_months, 2)
+        total_interest = 0.0
+    else:
+        r = (interest_rate_percent / 100.0) / 12.0
+        factor = (1.0 + r) ** tenure_months
+        if factor > 1.0:
+            monthly_emi = round((funding_gap * r * factor) / (factor - 1.0), 2)
+        else:
+            monthly_emi = round(funding_gap / tenure_months, 2)
+        
+        total_payable = round(monthly_emi * tenure_months, 2)
+        total_interest = max(0.0, round(total_payable - funding_gap, 2))
+
+    # 3. Retrieve relevant government schemes based on category
+    category_name = business_category or "Agriculture"
+    schemes = get_schemes_for_category(category_name)
+
+    return {
+        "project_cost": project_cost,
+        "available_capital": available_capital,
+        "funding_gap": funding_gap,
+        "interest_rate_percent": interest_rate_percent,
+        "tenure_months": tenure_months,
+        "monthly_emi": monthly_emi,
+        "total_interest": total_interest,
+        "total_payable": total_payable,
+        "business_category": category_name,
+        "schemes": schemes
+    }
 
 
 def get_nearby_competitors(
@@ -353,6 +539,35 @@ def health_check_alias():
     return {"status": "GramBiz API is running"}
 
 
+@app.post("/api/finance/calculate", response_model=FinancialCalcResponse)
+def calculate_finance_endpoint(payload: FinancialCalcRequest):
+    """
+    POST endpoint calculating funding gap, monthly EMI, total interest, total payable,
+    and returning applicable government schemes for the specified business category.
+    """
+    return calculate_financial_projection(
+        project_cost=payload.project_cost,
+        available_capital=payload.available_capital,
+        interest_rate_percent=payload.interest_rate_percent,
+        tenure_months=payload.tenure_months,
+        business_category=payload.business_category
+    )
+
+
+@app.post("/api/financial-calc", response_model=FinancialCalcResponse)
+def calculate_financials_alias(payload: FinancialCalcRequest):
+    """
+    Alias endpoint for backward compatibility with /api/financial-calc.
+    """
+    return calculate_financial_projection(
+        project_cost=payload.project_cost,
+        available_capital=payload.available_capital,
+        interest_rate_percent=payload.interest_rate_percent,
+        tenure_months=payload.tenure_months,
+        business_category=payload.business_category
+    )
+
+
 @app.post("/api/advisory/generate", response_model=AdvisoryResponse)
 def generate_advisory_endpoint(payload: BusinessAnalysisRequest):
     """
@@ -386,31 +601,6 @@ def analyze_business(payload: BusinessAnalysisRequest):
     return {
         "status": "success",
         "message": f"Analysis initiated for {payload.business_category} in {payload.location}",
-        "data": payload.model_dump()
-    }
-
-
-@app.post("/api/financial-calc")
-def calculate_financials(payload: FinancialCalcRequest):
-    """
-    Endpoint for financial projections, loan requirement calculation, and tenure breakdown.
-    """
-    loan_required = max(0.0, payload.project_cost - payload.available_capital)
-    monthly_rate = (payload.interest_rate_percent / 100.0) / 12.0
-    
-    if monthly_rate > 0 and payload.tenure_months > 0 and loan_required > 0:
-        factor = (1 + monthly_rate) ** payload.tenure_months
-        emi = round((loan_required * monthly_rate * factor) / (factor - 1), 2)
-    elif payload.tenure_months > 0 and loan_required > 0:
-        emi = round(loan_required / payload.tenure_months, 2)
-    else:
-        emi = 0.0
-
-    return {
-        "status": "success",
-        "loan_required": loan_required,
-        "estimated_monthly_emi": emi,
-        "total_repayment": round(emi * payload.tenure_months, 2) if emi > 0 else 0.0,
         "data": payload.model_dump()
     }
 

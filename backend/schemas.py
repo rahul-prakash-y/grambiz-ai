@@ -1,4 +1,6 @@
 from pydantic import BaseModel, Field
+from typing import Optional, List
+
 
 
 class BusinessAnalysisRequest(BaseModel):
@@ -61,6 +63,11 @@ class FinancialCalcRequest(BaseModel):
         description="Loan tenure in months (e.g. 36 for 3 years)",
         examples=[36]
     )
+    business_category: Optional[str] = Field(
+        default="Agriculture",
+        description="Category of business (e.g., 'Agriculture', 'Retail', 'Manufacturing')",
+        examples=["Agriculture"]
+    )
 
     model_config = {
         "json_schema_extra": {
@@ -68,10 +75,40 @@ class FinancialCalcRequest(BaseModel):
                 "project_cost": 500000.0,
                 "available_capital": 100000.0,
                 "interest_rate_percent": 8.5,
-                "tenure_months": 36
+                "tenure_months": 36,
+                "business_category": "Agriculture"
             }
         }
     }
+
+
+class GovernmentScheme(BaseModel):
+    """
+    Government subsidy and loan scheme metadata.
+    """
+    scheme_name: str = Field(..., description="Official scheme title")
+    short_code: str = Field(..., description="Short identifier (e.g., PMEGP, MUDRA)")
+    subsidy_percentage: float = Field(default=0.0, description="Subsidy / grant percentage")
+    max_subsidy_amount: float = Field(default=0.0, description="Maximum eligible subsidy cap in INR")
+    description: str = Field(..., description="Summary of benefits and eligibility")
+    eligible_agency: str = Field(..., description="Implementing or lending authority")
+
+
+class FinancialCalcResponse(BaseModel):
+    """
+    Complete financial calculation response with funding gap, EMI, interest, and government schemes.
+    """
+    project_cost: float = Field(..., description="Total project setup cost")
+    available_capital: float = Field(..., description="Available self-funded capital")
+    funding_gap: float = Field(..., description="Calculated funding gap (0 if available capital >= cost)")
+    interest_rate_percent: float = Field(..., description="Annual interest rate percentage")
+    tenure_months: int = Field(..., description="Loan tenure in months")
+    monthly_emi: float = Field(..., description="Monthly EMI calculated with standard amortisation formula")
+    total_interest: float = Field(..., description="Total interest payable over loan tenure")
+    total_payable: float = Field(..., description="Total repayment amount over tenure")
+    business_category: str = Field(..., description="Target business category")
+    schemes: list[GovernmentScheme] = Field(default_factory=list, description="Applicable government schemes")
+
 
 
 class CompetitorResponse(BaseModel):
