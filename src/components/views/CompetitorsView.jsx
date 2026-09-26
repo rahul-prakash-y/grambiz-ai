@@ -28,7 +28,7 @@ import {
 } from '../../services/googlePlacesService';
 
 export default function CompetitorsView({ t, lang, onNavigate }) {
-  const { ideaData } = useBusinessIdea();
+  const { ideaData, competitors: globalCompetitors } = useBusinessIdea();
 
   // Search radius: 1km, 5km, 10km
   const [radiusKm, setRadiusKm] = useState(5);
@@ -51,9 +51,14 @@ export default function CompetitorsView({ t, lang, onNavigate }) {
     district: TAMIL_NADU_RURAL_CENTER.district
   };
 
+  // Base list prefers live backend competitors from /api/competitors, fallback to MOCK_COMPETITORS
+  const baseCompetitorsList = (globalCompetitors && globalCompetitors.length > 0)
+    ? globalCompetitors
+    : MOCK_COMPETITORS;
+
   // Filter competitors strictly within the selected radius (1km, 5km, 10km)
-  const competitorsInRadius = MOCK_COMPETITORS.filter(
-    (c) => c.distanceKm <= radiusKm + 0.1
+  const competitorsInRadius = baseCompetitorsList.filter(
+    (c) => (c.distanceKm !== undefined ? c.distanceKm : 1.0) <= radiusKm + 0.1
   );
 
   // Filtered by threat for table view
@@ -61,6 +66,7 @@ export default function CompetitorsView({ t, lang, onNavigate }) {
     if (selectedThreat === 'all') return true;
     return item.threat === selectedThreat;
   });
+
 
   // Select first competitor if none selected
   useEffect(() => {
@@ -182,7 +188,7 @@ export default function CompetitorsView({ t, lang, onNavigate }) {
         <div className="lg:col-span-5 h-[580px]">
           <CompetitorSidePanel
             competitors={competitorsInRadius}
-            allCompetitorsCount={MOCK_COMPETITORS.length}
+            allCompetitorsCount={baseCompetitorsList.length}
             radiusKm={radiusKm}
             setRadiusKm={setRadiusKm}
             selectedCompetitor={selectedCompetitor}

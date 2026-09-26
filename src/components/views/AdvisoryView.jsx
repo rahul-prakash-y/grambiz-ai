@@ -28,7 +28,9 @@ export default function AdvisoryView({ t, lang = 'en', onNavigate }) {
   const { 
     ideaData, 
     updateIdeaData, 
-    analysisResult 
+    analysisResult,
+    advisory,
+    financials
   } = useBusinessIdea();
 
   // Active Category state (synced with global ideaData or switchable)
@@ -41,10 +43,22 @@ export default function AdvisoryView({ t, lang = 'en', onNavigate }) {
   const [exportSuccess, setExportSuccess] = useState(false);
   const [showDual, setShowDual] = useState(false);
 
-  // Active category SWOT and Market Insights from data module
-  const swotData = ADVISORY_DATA.swotByCategory[currentCategory] || ADVISORY_DATA.swotByCategory['Grocery'];
-  const marketInsights = ADVISORY_DATA.marketInsightsByCategory[currentCategory] || ADVISORY_DATA.marketInsightsByCategory['Grocery'];
-  const schemesList = ADVISORY_DATA.schemes;
+  // Active category SWOT and Market Insights (prefers live backend Gemini AI output, fallback to ADVISORY_DATA)
+  const backendSwot = advisory?.swot_analysis || analysisResult?.advisory?.swot_analysis;
+  const swotData = backendSwot || ADVISORY_DATA.swotByCategory[currentCategory] || ADVISORY_DATA.swotByCategory['Grocery'];
+
+  const backendInsights = advisory?.market_insights || analysisResult?.advisory?.market_insights;
+  const marketInsights = (backendInsights && backendInsights.length > 0)
+    ? backendInsights
+    : (ADVISORY_DATA.marketInsightsByCategory[currentCategory] || ADVISORY_DATA.marketInsightsByCategory['Grocery']);
+
+  const backendRisks = advisory?.risks || analysisResult?.advisory?.risks;
+
+  const backendSchemes = financials?.schemes || analysisResult?.financials?.schemes;
+  const schemesList = (backendSchemes && backendSchemes.length > 0)
+    ? backendSchemes
+    : ADVISORY_DATA.schemes;
+
 
   // Category Icon helper
   const getCategoryIcon = (cat) => {
@@ -381,6 +395,35 @@ export default function AdvisoryView({ t, lang = 'en', onNavigate }) {
             showDual={showDual}
           />
         </section>
+
+        {/* SECTION 2B: GEMINI AI ASSESSED OPERATIONAL RISKS */}
+        {backendRisks && backendRisks.length > 0 && (
+          <section aria-labelledby="risks-heading" className="p-5 rounded-2xl bg-amber-50/70 border border-amber-200/90 shadow-xs space-y-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-4 h-4 text-amber-700" />
+              </div>
+              <div>
+                <h3 id="risks-heading" className="text-sm font-extrabold text-slate-800 flex items-center gap-2">
+                  <span>{lang === 'ta' ? 'AI பகுப்பாய்வு செய்த முக்கிய இடர் காரணிகள்' : 'Gemini AI Operational Risk Assessment'}</span>
+                  <span className="badge badge-xs bg-amber-200 text-amber-900 border-none font-bold">2 Key Risks</span>
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  {lang === 'ta' ? 'உங்கள் முதலீட்டை பாதுகாக்க கவனிக்க வேண்டிய இடர்கள்' : 'Strategic safeguards and risk mitigation points recommended by Google GenAI'}
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+              {backendRisks.map((risk, rIdx) => (
+                <div key={rIdx} className="p-3 bg-white rounded-xl border border-amber-200/70 flex items-start gap-2.5 text-xs text-slate-700">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0 mt-1.5" />
+                  <span className="leading-relaxed font-medium">{risk}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         {/* SECTION 3: RECOMMENDED GOVERNMENT SCHEMES SECTION (WITH ELIGIBILITY & MAX SUBSIDY TAGS) */}
         <section aria-labelledby="govt-schemes-heading" className="space-y-4">

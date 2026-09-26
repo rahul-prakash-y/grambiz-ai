@@ -19,6 +19,8 @@ export default function EmiCalculatorSection({
   setInterestRate,
   tenureMonths,
   setTenureMonths,
+  backendFinancials,
+  isBackendLoading,
   t,
   lang,
   projectedMonthlyProfit
@@ -144,10 +146,24 @@ export default function EmiCalculatorSection({
               </p>
             </div>
           </div>
-          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 text-xs font-bold border border-teal-200">
-            <Calculator className="w-3 h-3 text-teal-600" />
-            <span>{lang === 'ta' ? 'நேரலை EMI' : 'Live EMI'}</span>
-          </span>
+          <div className="flex items-center gap-2">
+            {isBackendLoading && (
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[11px] font-semibold border border-sky-200">
+                <span className="loading loading-spinner loading-xs text-sky-600" />
+                <span>{lang === 'ta' ? 'கணக்கிடுகிறது...' : 'Syncing...'}</span>
+              </span>
+            )}
+            {backendFinancials && !isBackendLoading && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                <span>{lang === 'ta' ? 'FastAPI சரிபார்க்கப்பட்டது' : 'FastAPI Connected'}</span>
+              </span>
+            )}
+            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-teal-50 text-teal-800 text-xs font-bold border border-teal-200">
+              <Calculator className="w-3 h-3 text-teal-600" />
+              <span>{lang === 'ta' ? 'நேரலை EMI' : 'Live EMI'}</span>
+            </span>
+          </div>
         </div>
 
         {/* Principal Sync / Custom Controls */}

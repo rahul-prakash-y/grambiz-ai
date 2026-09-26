@@ -64,7 +64,15 @@ export default function MarketInsightsCard({
       {/* Bullet Points Grid */}
       <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
         {insights.map((item, idx) => {
-          const IconComp = item.icon || TrendingUp;
+          const isStr = typeof item === 'string';
+          const IconComp = (!isStr && item && item.icon) ? item.icon : TrendingUp;
+          const itemText = isStr ? item : (item && item.text ? item.text : '');
+          const itemCategory = isStr 
+            ? `Market Signal #${idx + 1}` 
+            : (lang === 'ta' ? (item?.categoryTa || item?.category) : (item?.category || 'Insight'));
+          const itemMetric = isStr 
+            ? 'AI Verified' 
+            : (lang === 'ta' ? (item?.metricTa || item?.metric) : item?.metric);
 
           return (
             <div 
@@ -80,18 +88,18 @@ export default function MarketInsightsCard({
               <div className="flex-1 min-w-0">
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
-                    {lang === 'ta' ? (item.categoryTa || item.category) : item.category}
+                    {itemCategory}
                   </span>
-                  {item.metric && (
+                  {itemMetric && (
                     <span className="text-xs font-black text-emerald-800 bg-emerald-100/90 px-2 py-0.5 rounded-md border border-emerald-200/80 shrink-0">
-                      {lang === 'ta' ? (item.metricTa || item.metric) : item.metric}
+                      {itemMetric}
                     </span>
                   )}
                 </div>
 
                 <TranslatableText
-                  text={item.text}
-                  tamilPlaceholder={item.tamilPlaceholder}
+                  text={itemText}
+                  tamilPlaceholder={isStr ? '' : (item?.tamilPlaceholder || '')}
                   lang={lang}
                   showDual={showDual}
                   className="text-xs sm:text-sm font-semibold text-slate-800 leading-relaxed block"

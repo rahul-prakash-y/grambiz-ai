@@ -15,6 +15,8 @@ export default function FundingGapSection({
   onUpdateAvailableCapital,
   selectedScheme,
   setSelectedScheme,
+  backendFinancials,
+  isBackendLoading,
   t,
   lang,
   category,
@@ -300,6 +302,32 @@ export default function FundingGapSection({
               <span className="text-sm font-black text-emerald-700">
                 + ₹{subsidyAmount.toLocaleString('en-IN')}
               </span>
+            </div>
+          )}
+
+          {/* Dynamic Government Schemes from FastAPI backend /api/finance/calculate */}
+          {backendFinancials?.schemes && backendFinancials.schemes.length > 0 && (
+            <div className="p-3 rounded-xl bg-slate-50 border border-slate-200/80 space-y-2">
+              <div className="flex items-center justify-between text-[11px] font-bold text-slate-700">
+                <span className="flex items-center gap-1.5 text-emerald-800">
+                  <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                  {lang === 'ta' ? 'FastAPI பரிந்துரைத்த அரசு மானியத் திட்டங்கள்:' : 'FastAPI Matched Government Schemes:'}
+                </span>
+                <span className="text-[10px] text-slate-400">/api/finance/calculate</span>
+              </div>
+              <div className="space-y-1.5">
+                {backendFinancials.schemes.slice(0, 3).map((sch, sIdx) => (
+                  <div key={sIdx} className="p-2 rounded-lg bg-white border border-slate-200/60 flex items-start justify-between gap-2 text-xs">
+                    <div>
+                      <strong className="text-slate-800 block text-[11px] font-bold">{sch.name}</strong>
+                      <span className="text-[10px] text-slate-500 line-clamp-1">{sch.description}</span>
+                    </div>
+                    <span className="badge badge-xs bg-emerald-100 text-emerald-800 font-extrabold border-none shrink-0">
+                      {sch.subsidy}
+                    </span>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

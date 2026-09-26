@@ -5,6 +5,9 @@ import {
   FileDown, 
   Sparkles, 
   RotateCcw,
+  CheckCircle2,
+  RefreshCw,
+  Cpu
 } from 'lucide-react';
 import { useBusinessIdea } from '../../context/BusinessIdeaContext';
 import ProjectCostSection from '../calculator/ProjectCostSection';
@@ -13,7 +16,13 @@ import EmiCalculatorSection from '../calculator/EmiCalculatorSection';
 import ProposalModal from '../calculator/ProposalModal';
 
 export default function CalculatorView({ t, lang, onNavigate }) {
-  const { ideaData, updateIdeaData, analysisResult } = useBusinessIdea();
+  const { 
+    ideaData, 
+    updateIdeaData, 
+    analysisResult, 
+    financials, 
+    calculateFinanceLive 
+  } = useBusinessIdea();
 
   // Available Capital from global state
   const globalAvailableCapital = Number(ideaData?.availableCapital ?? ideaData?.investment) || 250000;
@@ -71,11 +80,13 @@ export default function CalculatorView({ t, lang, onNavigate }) {
   const [tenureMonths, setTenureMonths] = useState(60);  // 5 Years default
   const [customLoanAmount, setCustomLoanAmount] = useState(0);
 
+  // Loading indicator for live calculation from FastAPI backend
+  const [isCalculating, setIsCalculating] = useState(false);
+
   // Proposal Modal State
   const [isProposalModalOpen, setIsProposalModalOpen] = useState(false);
-  const [copyNotification, setCopyNotification] = useState(false);
 
-  // Sync defaults when global idea category or capital changes significantly
+  // Sync defaults when global idea category or capital changes
   useEffect(() => {
     const defaults = getCategoryDefaults(currentCategory, globalAvailableCapital);
     setEquipment(defaults.equipment);
@@ -88,7 +99,7 @@ export default function CalculatorView({ t, lang, onNavigate }) {
   const fundingGap = totalProjectCost - globalAvailableCapital;
   const requiredLoanAmount = Math.max(0, fundingGap);
 
-  // Calculate EMI for proposal preview
+  // Client-side fallback calculation
   const r = (interestRate / 12) / 100;
   const emiFactor = Math.pow(1 + r, tenureMonths);
   const previewEmi = requiredLoanAmount > 0 && interestRate > 0 && tenureMonths > 0
@@ -98,6 +109,50 @@ export default function CalculatorView({ t, lang, onNavigate }) {
     : 0;
   const previewTotalPayable = previewEmi * tenureMonths;
   const previewTotalInterest = Math.max(0, previewTotalPayable - requiredLoanAmount);
+
+  // Effective financial values synced with FastAPI backend /api/finance/calculate
+  const effectiveEmi = (financials?.monthly_emi !== undefined && financials.monthly_emi !== null) 
+    ? Math.round(financials.monthly_emi) 
+    : previewEmi;
+  const effectiveTotalInterest = (financials?.total_interest !== undefined && financials.total_interest !== null) 
+    ? Math.round(financials.total_interest) 
+    : previewTotalInterest;
+  const effectiveTotalPayable = (financials?.total_payable !== undefined && financials.total_payable !== null) 
+    ? Math.round(financials.total_payable) 
+    : previewTotalPayable;
+  const effectiveFundingGap = (financials?.funding_gap !== undefined && financials.funding_gap !== null)
+    ? Math.round(financials.funding_gap)
+    : fundingGap;
+
+  // Live Sync with FastAPI backend /api/finance/calculate
+  useEffect(() => {
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      if (totalProjectCost > 0) {
+        setIsCalculating(true);
+        try {
+          await calculateFinanceLive(
+            totalProjectCost,
+            globalAvailableCapital,
+            interestRate,
+            tenureMonths,
+            currentCategory
+          );
+        } catch (err) {
+          console.warn('[CalculatorView] Backend finance calculation notice:', err.message);
+        } finally {
+          if (!isCancelled) {
+            setIsCalculating(false);
+          }
+        }
+      }
+    }, 350);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [totalProjectCost, globalAvailableCapital, interestRate, tenureMonths, currentCategory]);
 
   // Reset to active category benchmarks
   const handleResetToCategoryBenchmarks = () => {
@@ -128,10 +183,24 @@ export default function CalculatorView({ t, lang, onNavigate }) {
       {/* 1. Header Banner */}
       <div className="bg-white rounded-2xl p-6 border border-slate-200/90 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200 mb-2">
-            <Calculator className="w-3.5 h-3.5 text-emerald-600" />
-            <span>{t.calculator.badge}</span>
+          <div className="flex flex-wrap items-center gap-2 mb-2">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 text-xs font-bold border border-emerald-200">
+              <Calculator className="w-3.5 h-3.5 text-emerald-600" />
+              <span>{t.calculator.badge}</span>
+            </div>
+            {isCalculating ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-50 text-sky-800 text-[11px] font-bold border border-sky-200">
+                <span className="loading loading-spinner loading-xs text-sky-600" />
+                <span>FastAPI Recalculating...</span>
+              </span>
+            ) : financials ? (
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 text-[11px] font-bold border border-emerald-200">
+                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                <span>FastAPI /api/finance/calculate Synced</span>
+              </span>
+            ) : null}
           </div>
+
           <h1 className="text-xl sm:text-2xl font-extrabold text-slate-800">
             {t.calculator.title}
           </h1>
@@ -248,6 +317,8 @@ export default function CalculatorView({ t, lang, onNavigate }) {
             onUpdateAvailableCapital={handleUpdateAvailableCapital}
             selectedScheme={selectedScheme}
             setSelectedScheme={setSelectedScheme}
+            backendFinancials={financials}
+            isBackendLoading={isCalculating}
             t={t}
             lang={lang}
             category={currentCategory}
@@ -258,13 +329,15 @@ export default function CalculatorView({ t, lang, onNavigate }) {
         {/* Row 2: Section 3: EMI Calculator */}
         <div className="w-full">
           <EmiCalculatorSection
-            requiredLoanAmount={requiredLoanAmount}
+            requiredLoanAmount={effectiveFundingGap > 0 ? effectiveFundingGap : requiredLoanAmount}
             customLoanAmount={customLoanAmount}
             setCustomLoanAmount={setCustomLoanAmount}
             interestRate={interestRate}
             setInterestRate={setInterestRate}
             tenureMonths={tenureMonths}
             setTenureMonths={setTenureMonths}
+            backendFinancials={financials}
+            isBackendLoading={isCalculating}
             t={t}
             lang={lang}
             projectedMonthlyProfit={analysisResult?.monthlyProfitMin}
@@ -313,14 +386,14 @@ export default function CalculatorView({ t, lang, onNavigate }) {
           workingCapital,
           totalProjectCost,
           availableCapital: globalAvailableCapital,
-          requiredLoanAmount,
+          requiredLoanAmount: effectiveFundingGap > 0 ? effectiveFundingGap : requiredLoanAmount,
           selectedSchemeName: schemeNames[selectedScheme] || 'PMEGP Rural Scheme',
           subsidyAmount: Math.round(totalProjectCost * (selectedScheme === 'pmegp-special' ? 0.35 : selectedScheme === 'pmegp-general' ? 0.25 : 0)),
           interestRate,
           tenureMonths,
-          monthlyEmi: previewEmi,
-          totalInterest: previewTotalInterest,
-          totalPayable: previewTotalPayable
+          monthlyEmi: effectiveEmi,
+          totalInterest: effectiveTotalInterest,
+          totalPayable: effectiveTotalPayable
         }}
       />
     </div>

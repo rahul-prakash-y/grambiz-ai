@@ -124,33 +124,40 @@ export default function SWOTQuadrant({
 
         {/* Quadrant Bullet List */}
         <ul className="mt-4 space-y-3">
-          {items.map((item, idx) => (
-            <li 
-              key={idx}
-              className="p-3 rounded-xl bg-white/85 border border-slate-100 hover:border-slate-300 shadow-2xs transition-all flex flex-col sm:flex-row sm:items-start justify-between gap-2"
-            >
-              <div className="flex items-start gap-2.5 flex-1 min-w-0">
-                <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${theme.bulletColor}`} />
-                <div className="flex-1">
-                  <TranslatableText
-                    text={item.text}
-                    tamilPlaceholder={item.tamilPlaceholder}
-                    lang={lang}
-                    showDual={showDual}
-                    className="text-xs sm:text-sm font-semibold text-slate-800 leading-relaxed block"
-                    as="span"
-                  />
-                </div>
-              </div>
+          {items.map((item, idx) => {
+            const itemText = typeof item === 'string' ? item : (item?.text || '');
+            const itemTamil = typeof item === 'string' ? '' : (item?.tamilPlaceholder || '');
+            const itemImpact = typeof item === 'string' ? null : item?.impact;
+            const itemImpactTa = typeof item === 'string' ? null : (item?.impactTa || item?.impact);
 
-              {/* Tag/Impact Badge */}
-              {item.impact && (
-                <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 self-start sm:self-auto ${theme.impactBadge}`}>
-                  {lang === 'ta' ? (item.impactTa || item.impact) : item.impact}
-                </span>
-              )}
-            </li>
-          ))}
+            return (
+              <li 
+                key={idx}
+                className="p-3 rounded-xl bg-white/85 border border-slate-100 hover:border-slate-300 shadow-2xs transition-all flex flex-col sm:flex-row sm:items-start justify-between gap-2"
+              >
+                <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                  <span className={`w-2 h-2 rounded-full mt-1.5 shrink-0 ${theme.bulletColor}`} />
+                  <div className="flex-1">
+                    <TranslatableText
+                      text={itemText}
+                      tamilPlaceholder={itemTamil}
+                      lang={lang}
+                      showDual={showDual}
+                      className="text-xs sm:text-sm font-semibold text-slate-800 leading-relaxed block"
+                      as="span"
+                    />
+                  </div>
+                </div>
+
+                {/* Tag/Impact Badge */}
+                {itemImpact && (
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md border shrink-0 self-start sm:self-auto ${theme.impactBadge}`}>
+                    {lang === 'ta' ? itemImpactTa : itemImpact}
+                  </span>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </div>
 
